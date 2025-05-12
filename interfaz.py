@@ -23,6 +23,12 @@ class UI:
         self.database_choice="sqlite"
         self.db_config = DatabaseConfig()
 
+        self.dd_apps = ft.Dropdown(
+            options=[],
+            label="Selecciona una app",
+            width=200
+        )
+
         self.txt_entorno = ft.TextField(
             label="Ej venv",
             width= 200,
@@ -317,37 +323,28 @@ class UI:
             ]
         )
     
-    def crear_entorno_handler(self,e):
-        try:
-            subprocess.run(["django-admin", "--version"], check=True, capture_output=True)
-        except Exception as e:
-            print(" Django no está instalado correctamente", color="red")
-            return
+    async def crear_entorno_handler(self, e):
         nombre_entorno = self.txt_entorno.value.strip()
         nombre_proyecto = self.txt_nombre_proyecto.value.strip()
-        nombre_proyecto = nombre_proyecto.replace(" ","_")
-
-        if not nombre_entorno:
-            self.mostrar_mensaje("Debes ingresar un nombre", color="red")
-            return
-        if not nombre_proyecto:
-            self.mostrar_mensaje("Ingresa un nombre para el proyecto", color="red")
-            return
         
-        resultado=crear_entorno_virtual(nombre_entorno, self.ruta_base)
-        if "creado" in resultado:
-            exito = DjangoManager.create_standard_project(
-                env_path=str(Path(self.ruta_base) / nombre_entorno),
-                project_name=nombre_proyecto,  
-                project_dir=self.ruta_base
+        if not nombre_entorno or not nombre_proyecto:
+            print("Ingresa nombres para entorno y proyecto", color="red")
+            return
+        try:
+            # Crear entorno Y proyecto
+            resultado = crear_entorno_virtual(
+                nombre_entorno,
+                self.ruta_base,
+                nombre_proyecto
             )
-            if exito:
-                resultado += "\n Proyecto Django estándar generado (con manage.py)"
-
-        self.mostrar_mensaje(resultado)
-        self.page.update()
-
-
+            print(resultado)
+            
+            # Actualizar ruta base para las apps
+            self.ruta_proyecto = str(Path(self.ruta_base) / nombre_proyecto)
+            self.page.update()
+            
+        except Exception as ex:
+            self.mostrar_mensaje(f" Error: {str(ex)}", color="red")
     
 
     def mostrar_mensaje(self, mensaje: str, color: str = "green"):
@@ -380,24 +377,52 @@ class UI:
         self.mostrar_mensaje(f"Configuración {self.database_choice.upper()} guardada")
 
 
-
     def guardar_modelo(self, e):
         nombre_tabla = self.txt_tabla.value.strip()
         if not nombre_tabla:
-            self.mostrar_mensaje(" Ingresa un nombre para la tabla", color="red")
+            self.mostrar_mensaje("Ingresa un nombre para la tabla", color="red")
             return
         
-        campos = []
-        for row in self.campos_column.controls[1:]:  # Ignora el encabezado
-            if isinstance(row, ft.Row):
-                nombre_campo = row.controls[0].value.strip()
-                tipo_campo = row.controls[1].value
-                if nombre_campo:
-                    campos.append({"name": nombre_campo, "type": tipo_campo})
-        
-        self.db_config.add_model(nombre_tabla, campos)
-        self.mostrar_mensaje(f" Modelo '{nombre_tabla}' guardado")
+        try:
 
+            campos = []
+            for row in self.campos_column.controls[1:]:
+                if isinstance(row, ft.Row):
+                    nombre_campo = row.controls[0].value.strip()
+                    tipo_campo = row.controls[1].value
+                    if nombre_campo:
+                        campos.append({"name": nombre_campo, "type": tipo_campo})
+            app_name = "clientes"  
+            models_path = Path(self.ruta_proyecto) / "mi_proyecto" / "apps" / app_name / "models.py"
+            
+            if not models_path.exists():
+                models_path.parent.mkdir(parents=True, exist_ok=True)
+                models_path.write_text("from django.db import models\n\n")
+            
+            with open(models_path, "a") as f:
+                f.write(f"\nclass {nombre_tabla}(models.Model):\n")
+                for campo in campos:
+                    f.write(f"    {campo['name']} = models.{campo['type']}\n")
+            
+            admin_path = models_path.parent / "admin.py"
+            if not admin_path.exists():
+                admin_path.write_text("from django.contrib import admin\nfrom .models import *\n\n")
+            
+            with open(admin_path, "a") as f:
+                f.write(f"admin.site.register({nombre_tabla})\n")
+            
+            if hasattr(self, 'ruta_proyecto') and self.ruta_proyecto:
+                manage_py = Path(self.ruta_proyecto) / "mi_proyecto" / "manage.py"
+                subprocess.run(["python", str(manage_py), "makemigrations", app_name], check=True)
+                subprocess.run(["python", str(manage_py), "migrate"], check=True)
+            
+            self.mostrar_mensaje(f"Modelo '{nombre_tabla}' creado en {app_name}/models.py y migrado")
+            
+        except subprocess.CalledProcessError:
+            self.mostrar_mensaje("Modelo creado pero falló migración", color="orange")
+        except Exception as ex:
+            self.mostrar_mensaje(f"Error: {str(ex)}", color="red")
+        
 
     def obtener_campos(self) -> list:
         """Recolecta campos desde la UI"""
@@ -478,18 +503,18 @@ class UI:
 
         self.campos_column = ft.Column(
             controls=[
-                ft.Row([  # Encabezado
+                self.dd_apps,
+                ft.Row([
                     ft.Text("Nombre", width=200, weight="bold"),
-                    ft.Text("Tipo", width=150, weight="bold")
+                    ft.Text("Tipo", width=150, weight="bold"),
                 ],
                 spacing=20
                 ),
-                *[self._crear_fila_campo(i) for i in range(1, 5)]  # 4 campos iniciales
+                *[self._crear_fila_campo(i) for i in range(1, 5)],
             ],
             spacing=10
         )
         
-
         container_campos = ft.Container(
             content=self.campos_column,
             padding=ft.padding.only(left=20, right=20)
@@ -497,6 +522,7 @@ class UI:
         
         return ft.Column(
             controls=[
+                self.dd_apps,
                 ft.Text("Crear tabla", size=20, weight="bold"),
                 self.txt_tabla,
                 ft.Divider(height=20),
@@ -563,32 +589,55 @@ class UI:
             self.mostrar_mensaje("Esta app ya fue añadida", color="orange")
             return
         
-        # Añadir a la lista
         self.apps_a_crear.append(nombre_app)
         self.lista_apps.controls.append(ft.Text(f"- {nombre_app}"))
-        self.txt_nombre_app.value = ""  # Limpiar campo
+        self.txt_nombre_app.value = ""  
         self.page.update()
 
     def generar_apps(self, e):
-        if not self.apps_a_crear:
-            self.mostrar_mensaje("❌ No hay apps para generar", color="red")
+        if not hasattr(self, 'ruta_proyecto') or not self.ruta_proyecto:
+            self.mostrar_mensaje("Primero crea el proyecto Django", color="red")
             return
         
         try:
-            # Ruta exacta (ajusta 'mi_proyecto' si es diferente)
-            project_dir = Path(self.ruta_base) / "mi_proyecto"
+            project_dir = Path(self.ruta_proyecto)
+            print(f"\n[DEBUG] Ruta confirmada: {project_dir}")
+            print(f"Contenido: {[f.name for f in project_dir.glob('*')]}")
             
-            # Debug forzado
-            print("\n" + "="*50)
-            print(f"Ruta completa: {project_dir}")
-            print(f"¿Existe?: {project_dir.exists()}")
-            print(f"Contenido: {list(project_dir.glob('*'))}")
-            print("="*50 + "\n")
+            apps_dir = project_dir / "apps"
+            apps_dir.mkdir(exist_ok=True)
+            
+            settings_path = next(
+                f for f in project_dir.glob('**/settings.py')
+                if f.is_file() and 'mi_proyecto' in str(f)
+            ) if 'mi_proyecto' in self.ruta_proyecto else project_dir / 'mi_proyecto' / 'settings.py'
             
             for app_name in self.apps_a_crear:
-                if self.db_config.create_django_app(app_name, str(project_dir)):
-                    self.mostrar_mensaje(f"App '{app_name}' creada manualmente")
-                    
+                app_path = apps_dir / app_name
+                app_path.mkdir()
+                
+                (app_path / "__init__.py").touch()
+                (app_path / "apps.py").write_text(f"""
+    from django.apps import AppConfig
+
+    class {app_name.capitalize()}Config(AppConfig):
+        default_auto_field = 'django.db.models.BigAutoField'
+        name = 'apps.{app_name}'
+                """)
+                
+                with open(settings_path, 'r+') as f:
+                    content = f.read()
+                    if f"'apps.{app_name}'" not in content:
+                        new_content = content.replace(
+                            "'django.contrib.staticfiles',",
+                            f"'django.contrib.staticfiles',\n    'apps.{app_name}',"
+                        )
+                        f.seek(0)
+                        f.write(new_content)
+                        f.truncate()
+                
+                print(f"App '{app_name}' creada y registrada en settings.py") 
+            
             self.apps_a_crear.clear()
             self.lista_apps.controls.clear()
             self.page.update()

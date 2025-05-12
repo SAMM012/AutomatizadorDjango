@@ -3,37 +3,29 @@ import subprocess
 from pathlib import Path
 import sys
 
-
-def crear_entorno_virtual(nombre: str, ruta_base: str) -> str:
+def crear_entorno_virtual(nombre: str, ruta_base: str, nombre_proyecto: str) -> str:
     try:
         ruta_completa = Path(ruta_base) / nombre
         
-        # Verificar si el nombre es válido
-        if not nombre.isidentifier():
-            return "Error: Nombre no válido (usar solo letras, números y guiones bajos)"
-            
-        # Crear el entorno virtual
+        # 1. Crear entorno virtual
+        subprocess.run([sys.executable, "-m", "venv", str(ruta_completa)], check=True)
+
+        # 2. Instalar Django
+        pip_path = str(ruta_completa / "Scripts" / "pip")
+        subprocess.run([pip_path, "install", "django"], check=True)
+        
+        # 3. Crear carpeta del proyecto
+        proyecto_path = Path(ruta_base) / nombre_proyecto
+        proyecto_path.mkdir(exist_ok=True)
+        
+        # 4. Crear proyecto Django
+        django_admin = str(ruta_completa / "Scripts" / "django-admin")
         subprocess.run(
-            [sys.executable, "-m", "venv", str(ruta_completa)], 
+            [django_admin, "startproject", nombre_proyecto, str(proyecto_path)],
             check=True,
-            capture_output=True,
-            text=True
-        )
-
-        pip_path = str(ruta_completa / "Scripts" / "pip") if sys.platform == "win32" else str(ruta_completa / "bin" / "pip")
-
-        #Intalar DJANGO
-
-        subprocess.run(
-            [pip_path, "install", "django"],
-            check=True,
-            capture_output=True,
-            text=True
+            cwd=ruta_base
         )
         
-        return f"Entorno '{nombre}' creado en:\n{ruta_completa}"
-        
-    except subprocess.CalledProcessError as e:
-        return f"Error al crear entorno:\n{e.stderr}"
+        return f"Entorno '{nombre}' y proyecto '{nombre_proyecto}' creados correctamente"
     except Exception as e:
-        return f"Error inesperado:\n{str(e)}"
+        return f"Error: {str(e)}"

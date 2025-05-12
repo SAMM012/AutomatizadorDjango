@@ -107,18 +107,26 @@ class DatabaseConfig:
         elif tipo == "DateTimeField":
             return "models.DateTimeField(auto_now_add=True)"
 
-    def generate_files(self, output_path: str):
-        """Genera los archivos de configuración"""
-        output_dir = Path(output_path)
-        output_dir.mkdir(exist_ok=True)
-
-        # Generar settings.py
-        with open(output_dir / "settings.py", "w") as f:
-            f.write(self.generate_django_settings())
-
-        # Generar models.py
-        with open(output_dir / "models.py", "w") as f:
-            f.write(self.generate_models_code())
+    def generate_files(self, output_path: str):    
+        project_dir = Path(output_path) / "mi_proyecto"
+        
+        settings_dir = project_dir / "mi_proyecto"
+        settings_dir.mkdir(parents=True, exist_ok=True)
+        
+        with open(settings_dir / "settings.py", "w") as f:
+            f.write(self.generate_django_settings()) 
+        
+        for app, models in self.apps.items():
+            app_dir = project_dir / "apps" / app
+            app_dir.mkdir(exist_ok=True)
+            
+            with open(app_dir / "models.py", "w") as f:
+                f.write("from django.db import models\n\n")
+                for model in models:
+                    f.write(f"class {model['name']}(models.Model):\n")
+                    for field in model['fields']:
+                        f.write(f"    {field['name']} = models.{field['type']}\n")
+                    f.write("\n\n")
 
     def _generate_db_config(self) -> str:
         if self.db_type == "sqlite":
@@ -171,20 +179,42 @@ class DatabaseConfig:
             return False
 
 
-    def update_installed_apps(self, app_name: str, settings_path: str) -> None:
-        """Añade la app a INSTALLED_APPS en settings.py."""
+    def update_installed_apps(self, settings_path: str, app_name: str):
+        """Añade la app a INSTALLED_APPS en settings.py"""
         try:
-            with open(settings_path, "r+") as f:
+            with open(settings_path, 'r+') as f:
                 content = f.read()
-                if f"'django.contrib.staticfiles'" in content:
-                    # Insertar la app antes de las apps de terceros
-                    new_content = content.replace(
+                
+                # Verificar si la app ya está registrada
+                if f"'apps.{app_name}'" in content:
+                    return
+                
+                # Buscar el bloque INSTALLED_APPS
+                if "'django.contrib.staticfiles'" in content:
+                    nuevo_content = content.replace(
                         "'django.contrib.staticfiles',",
-                        f"'django.contrib.staticfiles',\n    '{app_name}',"
+                        f"'django.contrib.staticfiles',\n    'apps.{app_name}',"
                     )
                     f.seek(0)
-                    f.write(new_content)
+                    f.write(nuevo_content)
+                    f.truncate()
         except Exception as e:
             print(f"Error al actualizar settings.py: {e}")
 
-    
+    def generar_modelo(self, app_name: str, model_name: str, fields: dict):
+        """Genera código para un modelo y lo añade a models.py"""
+        model_code = f"\nclass {model_name}(models.Model):\n"
+        for field_name, field_type in fields.items():
+            model_code += f"    {field_name} = models.{field_type}\n"
+        return model_code
+
+    def ejecutar_migraciones(self, project_path: str):
+        """Ejecuta makemigrations y migrate"""
+        try:
+            manage_py = Path(project_path) / "manage.py"
+            subprocess.run(["python", str(manage_py), "makemigrations"], check=True)
+            subprocess.run(["python", str(manage_py), "migrate"], check=True)
+            return True
+        except Exception as e:
+            print(f"Error en migraciones: {e}")
+            return False
