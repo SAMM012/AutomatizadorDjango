@@ -208,7 +208,7 @@ class UI:
                         alignment=ft.alignment.center,
                         content=ft.Row(
                             controls=[
-                                ft.Text("Panel 3", size=20, weight=ft.FontWeight.BOLD)
+                                ft.Text("Tipo de Base de Datos", size=20, weight=ft.FontWeight.BOLD)
                             ],
                             alignment=ft.MainAxisAlignment.CENTER,
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -380,11 +380,10 @@ class UI:
     def guardar_modelo(self, e):
         nombre_tabla = self.txt_tabla.value.strip()
         if not nombre_tabla:
-            self.mostrar_mensaje("Ingresa un nombre para la tabla", color="red")
+            print("Ingresa un nombre para la tabla", color="red")
             return
         
         try:
-
             campos = []
             for row in self.campos_column.controls[1:]:
                 if isinstance(row, ft.Row):
@@ -583,14 +582,15 @@ class UI:
             self.mostrar_mensaje("Ingresa un nombre para la app", color="red")
             return
         if not nombre_app.isidentifier():
-            self.mostrar_mensaje("Usa solo letras, números y _", color="red")
+            print("Usa solo letras, números y _", color="red")
             return
         if nombre_app in self.apps_a_crear:
-            self.mostrar_mensaje("Esta app ya fue añadida", color="orange")
+            print("Esta app ya fue añadida", color="orange")
             return
         
         self.apps_a_crear.append(nombre_app)
         self.lista_apps.controls.append(ft.Text(f"- {nombre_app}"))
+        self.dd_apps.options.append(ft.dropdown.Option(nombre_app)) 
         self.txt_nombre_app.value = ""  
         self.page.update()
 
