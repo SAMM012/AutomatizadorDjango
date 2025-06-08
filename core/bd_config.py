@@ -11,6 +11,7 @@ class DatabaseConfig:
         self.db_type = "sqlite"  # Valor por defecto
         self.postgres_config = {}
         self.models = []
+        self.apps={}
 
     def set_database_type(self, db_type: str):
         """Define el tipo de base de datos (sqlite/postgres)"""
@@ -26,9 +27,11 @@ class DatabaseConfig:
             "port": port
         }
 
-    def add_model(self, model_name: str, fields: list):
-        """Añade un modelo con sus campos"""
-        self.models.append({
+    def add_model(self, app_name: str, model_name: str, fields: list):
+        if app_name not in self.apps:
+            self.apps[app_name] = []
+            
+        self.apps[app_name].append({
             "name": model_name,
             "fields": fields
         })
@@ -108,16 +111,17 @@ class DatabaseConfig:
             return "models.DateTimeField(auto_now_add=True)"
 
     def generate_files(self, output_path: str):    
-        project_dir = Path(output_path) / "mi_proyecto"
+        project_dir = Path(output_path)
         
         settings_dir = project_dir / "mi_proyecto"
         settings_dir.mkdir(parents=True, exist_ok=True)
         
-        with open(settings_dir / "settings.py", "w") as f:
-            f.write(self.generate_django_settings()) 
+        if not (settings_dir / "settings.py").exists():
+            with open(settings_dir / "settings.py", "w") as f:
+                f.write(self.generate_django_settings()) 
         
-        for app, models in self.apps.items():
-            app_dir = project_dir / "apps" / app
+        for app_name, models in self.apps.items():
+            app_dir = project_dir / "apps" / app_name
             app_dir.mkdir(exist_ok=True)
             
             with open(app_dir / "models.py", "w") as f:
@@ -127,6 +131,11 @@ class DatabaseConfig:
                     for field in model['fields']:
                         f.write(f"    {field['name']} = models.{field['type']}\n")
                     f.write("\n\n")
+
+            with open(app_dir / "admin.py", "w") as f:
+                f.write("from django.contrib import admin\nfrom .models import *\n\n")
+                for model in models:
+                    f.write(f"admin.site.register({model['name']})\n")
 
     def _generate_db_config(self) -> str:
         if self.db_type == "sqlite":

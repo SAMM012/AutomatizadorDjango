@@ -23,6 +23,8 @@ class UI:
         self.database_choice="sqlite"
         self.db_config = DatabaseConfig()
 
+        
+
         self.dd_apps = ft.Dropdown(
             options=[],
             label="Selecciona una app",
@@ -56,6 +58,8 @@ class UI:
             width=200,
             height=40
         )
+
+        self.apps_generadas=[]
         self.lista_apps = ft.Column()  
 
         self.color_teal = "teal"
@@ -328,9 +332,10 @@ class UI:
         nombre_proyecto = self.txt_nombre_proyecto.value.strip()
         
         if not nombre_entorno or not nombre_proyecto:
-            print("Ingresa nombres para entorno y proyecto", color="red")
+            print("Ingresa nombres para entorno y proyecto")
             return
         try:
+            self.nombre_proyecto = nombre_proyecto 
             # Crear entorno Y proyecto
             resultado = crear_entorno_virtual(
                 nombre_entorno,
@@ -344,16 +349,16 @@ class UI:
             self.page.update()
             
         except Exception as ex:
-            self.mostrar_mensaje(f" Error: {str(ex)}", color="red")
+            print(f" Error: {str(ex)}")
     
 
-    def mostrar_mensaje(self, mensaje: str, color: str = "green"):
+    """def mostrar_mensaje(self, mensaje: str, color: str = "green"):
         self.page.dialog = ft.AlertDialog(
             title=ft.Text(mensaje, color=color),
             open=True
         )
         self.page.update()
-
+    """
     def update_db_choice(self, e):
         self.database_choice = e.control.value  # Guarda la selección
         print(f"Base de datos seleccionada: {self.database_choice}")  # Para debug
@@ -373,17 +378,20 @@ class UI:
                 host="localhost",
                 port="5432"
             )
-        
-        self.mostrar_mensaje(f"Configuración {self.database_choice.upper()} guardada")
+        print(f"Configuración {self.database_choice.upper()} guardada")
 
 
     def guardar_modelo(self, e):
         nombre_tabla = self.txt_tabla.value.strip()
         if not nombre_tabla:
-            print("Ingresa un nombre para la tabla", color="red")
+            print("Ingresa un nombre para la tabla")
             return
         
         try:
+            app_name = self.dd_apps.value
+            if not app_name:
+                raise ValueError
+            
             campos = []
             for row in self.campos_column.controls[1:]:
                 if isinstance(row, ft.Row):
@@ -391,12 +399,16 @@ class UI:
                     tipo_campo = row.controls[1].value
                     if nombre_campo:
                         campos.append({"name": nombre_campo, "type": tipo_campo})
-            app_name = "clientes"  
+              
             models_path = Path(self.ruta_proyecto) / "mi_proyecto" / "apps" / app_name / "models.py"
             
             if not models_path.exists():
                 models_path.parent.mkdir(parents=True, exist_ok=True)
                 models_path.write_text("from django.db import models\n\n")
+            
+            if not (Path(self.ruta_proyecto) / "apps" / app_name).exists():
+                print(f"La app {app_name} no existe en el proyecto")
+                return
             
             with open(models_path, "a") as f:
                 f.write(f"\nclass {nombre_tabla}(models.Model):\n")
@@ -415,12 +427,12 @@ class UI:
                 subprocess.run(["python", str(manage_py), "makemigrations", app_name], check=True)
                 subprocess.run(["python", str(manage_py), "migrate"], check=True)
             
-            self.mostrar_mensaje(f"Modelo '{nombre_tabla}' creado en {app_name}/models.py y migrado")
+            print(f"Modelo '{nombre_tabla}' creado en {app_name}/models.py y migrado")
             
         except subprocess.CalledProcessError:
-            self.mostrar_mensaje("Modelo creado pero falló migración", color="orange")
+            print("Modelo creado pero falló migración", color="orange")
         except Exception as ex:
-            self.mostrar_mensaje(f"Error: {str(ex)}", color="red")
+            print(f"Error: {str(ex)}")
         
 
     def obtener_campos(self) -> list:
@@ -442,8 +454,8 @@ class UI:
             if not self.ruta_base:
                 raise ValueError("Selecciona una ubicación para el proyecto primero.")
 
-            nombre_tabla = self.txt_tabla.value.strip()
-            if nombre_tabla:  
+            if hasattr(self, 'txt_tabla') and self.txt_tabla.value.strip():
+                nombre_tabla = self.txt_tabla.value.strip()
                 campos = []
                 for row in self.campos_column.controls[1:]:  
                     if isinstance(row, ft.Row):
@@ -452,14 +464,22 @@ class UI:
                         if nombre_campo:  # Ignorar campos vacíos
                             campos.append({"name": nombre_campo, "type": tipo_campo})
                 
-                self.db_config.add_model(nombre_tabla, campos)
+                if campos and self.dd_apps.value:
+                    app_name = self.dd_apps.value.replace(" (pendiente)", "")
+                    self.db_config.add_model(app_name, nombre_tabla, campos)
 
-            # 3. Generar archivos
             self.db_config.generate_files(self.ruta_base)
-            self.mostrar_mensaje(" Proyecto generado correctamente")
 
+            if hasattr(self, 'ruta_proyecto') and self.ruta_proyecto:
+                manage_py = Path(self.ruta_proyecto) / "manage.py"
+                subprocess.run(["python", str(manage_py), "makemigrations"], check=True)
+                subprocess.run(["python", str(manage_py), "migrate"], check=True)
+            print("Proyecto generado correctamente con todos los modelos")    
+
+        except subprocess.CalledProcessError:
+            print("Modelos creados pero falló la migración")
         except Exception as ex:
-            self.mostrar_mensaje(f" Error: {str(ex)}", color="red")
+            print(f"Error: {str(ex)}")
 
 
     def update_folder_name(self, e):
@@ -521,7 +541,6 @@ class UI:
         
         return ft.Column(
             controls=[
-                self.dd_apps,
                 ft.Text("Crear tabla", size=20, weight="bold"),
                 self.txt_tabla,
                 ft.Divider(height=20),
@@ -574,15 +593,37 @@ class UI:
             spacing=20
         )
         
+    def actualizar_dropdown_apps(self):
+        self.dd_apps.options = []
+
+        for app in self.apps_generadas:
+            self.dd_apps.options.append(
+                ft.dropdown.Option(
+                    text=app,
+                    style=ft.ButtonStyle(color=ft.colors.GREEN)
+                )
+            )
+        
+        # Apps pendientes (naranja)
+        for app in self.apps_a_crear:
+            self.dd_apps.options.append(
+                ft.dropdown.Option(
+                    text=f"{app} (pendiente)",
+                    style=ft.ButtonStyle(color=ft.colors.ORANGE)
+                )
+            )
+        
+        self.page.update()
+
     def añadir_app(self, e):
         nombre_app = self.txt_nombre_app.value.strip()
         
         # Validaciones
         if not nombre_app:
-            self.mostrar_mensaje("Ingresa un nombre para la app", color="red")
+            print("Ingresa un nombre para la app")
             return
         if not nombre_app.isidentifier():
-            print("Usa solo letras, números y _", color="red")
+            print("Usa solo letras, números y _")
             return
         if nombre_app in self.apps_a_crear:
             print("Esta app ya fue añadida", color="orange")
@@ -590,13 +631,16 @@ class UI:
         
         self.apps_a_crear.append(nombre_app)
         self.lista_apps.controls.append(ft.Text(f"- {nombre_app}"))
-        self.dd_apps.options.append(ft.dropdown.Option(nombre_app)) 
+        self.dd_apps.options = [
+            ft.dropdown.Option(app) for app in self.apps_a_crear
+        ]
+        self.dd_apps.value = nombre_app 
         self.txt_nombre_app.value = ""  
         self.page.update()
 
     def generar_apps(self, e):
         if not hasattr(self, 'ruta_proyecto') or not self.ruta_proyecto:
-            self.mostrar_mensaje("Primero crea el proyecto Django", color="red")
+            print("Primero crea el proyecto Django")
             return
         
         try:
@@ -606,19 +650,33 @@ class UI:
             
             apps_dir = project_dir / "apps"
             apps_dir.mkdir(exist_ok=True)
-            
-            settings_path = next(
-                f for f in project_dir.glob('**/settings.py')
-                if f.is_file() and 'mi_proyecto' in str(f)
-            ) if 'mi_proyecto' in self.ruta_proyecto else project_dir / 'mi_proyecto' / 'settings.py'
+
+            settings_path=None
+            possible_paths = [
+                project_dir / "settings.py",
+                project_dir / project_dir.name / "settings.py",
+                project_dir / self.txt_nombre_proyecto.value.strip() / "settings.py"
+            ]
+
+            for path in possible_paths:
+                if path.exists():
+                    settings_path = path
+                    break
+
+            if not settings_path:
+                settings_files = list(project_dir.glob('**/settings.py'))
+                if settings_files:
+                    settings_path = settings_files[0]
+                else:
+                    raise FileNotFoundError("No se encontró settings.py en el proyecto")        
+            print(f"Usando settings.py en: {settings_path}")
             
             for app_name in self.apps_a_crear:
                 app_path = apps_dir / app_name
-                app_path.mkdir()
+                app_path.mkdir(exist_ok=False)
                 
                 (app_path / "__init__.py").touch()
-                (app_path / "apps.py").write_text(f"""
-    from django.apps import AppConfig
+                (app_path / "apps.py").write_text(f"""from django.apps import AppConfig
 
     class {app_name.capitalize()}Config(AppConfig):
         default_auto_field = 'django.db.models.BigAutoField'
@@ -636,14 +694,23 @@ class UI:
                         f.write(new_content)
                         f.truncate()
                 
-                print(f"App '{app_name}' creada y registrada en settings.py") 
+                print(f"App '{app_name}' creada y registrada en settings.py")
+                
+                if app_name not in self.apps_generadas:
+                 self.apps_generadas.append(app_name)
             
+            self.actualizar_dropdown_apps()
             self.apps_a_crear.clear()
             self.lista_apps.controls.clear()
+
+            self.dd_apps.options = [
+                ft.dropdown.Option(app) for app in self.apps_generadas
+            ]
+
             self.page.update()
             
         except Exception as ex:
-            self.mostrar_mensaje(f"Error: {str(ex)}", color="red")
+            print(f"Error: {str(ex)}")
         
 
     def build(self):
