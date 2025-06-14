@@ -22,16 +22,15 @@ class DjangoManager:
             return False
 
     @staticmethod
-    def create_app(project_path: str, app_name: str) -> bool:
-        """Crea una app usando manage.py"""
+    @staticmethod
+    def create_app(project_path: str, app_name: str, python_path: str = "python") -> bool:
         try:
             manage_py = Path(project_path) / "manage.py"
             subprocess.run(
-                ["python", str(manage_py), "startapp", app_name],
+                [python_path, str(manage_py), "startapp", app_name],  # Usa python_path
                 check=True,
                 cwd=project_path
             )
             return True
         except Exception as e:
-            print(f"Error al crear app {app_name}: {e}")
-            return False
+            raise print(f"Error al crear app {app_name}: {e}")

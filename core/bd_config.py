@@ -113,6 +113,9 @@ class DatabaseConfig:
     def generate_files(self, output_path: str):    
         project_dir = Path(output_path)
         
+        apps_dir = project_dir / "apps"
+        apps_dir.mkdir(exist_ok=True)
+
         settings_dir = project_dir / "mi_proyecto"
         settings_dir.mkdir(parents=True, exist_ok=True)
         

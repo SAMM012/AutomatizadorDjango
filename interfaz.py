@@ -5,11 +5,11 @@ from core.django_manager import DjangoManager
 from core.bd_config import DatabaseConfig
 from pathlib import Path
 import subprocess
+import os
 
 class UI:
 
     def __init__(self, page:ft.Page):
-
         self.page = page
         self.logic = FolderCreatorLogic(page)
         self.txt_folder_name =ft.TextField(
@@ -22,6 +22,7 @@ class UI:
         self.lbl_path = ft.Text("Ninguna", style=ft.TextThemeStyle.BODY_SMALL)
         self.database_choice="sqlite"
         self.db_config = DatabaseConfig()
+        self.django_manager = DjangoManager()
 
         
 
@@ -322,8 +323,8 @@ class UI:
                 self.contenedor1,
                 self.contenedor2,
                 self.contenedor3,
-                self.contenedor4,
-                self.contenedor5
+                self.contenedor5,
+                self.contenedor4
             ]
         )
     
@@ -351,14 +352,6 @@ class UI:
         except Exception as ex:
             print(f" Error: {str(ex)}")
     
-
-    """def mostrar_mensaje(self, mensaje: str, color: str = "green"):
-        self.page.dialog = ft.AlertDialog(
-            title=ft.Text(mensaje, color=color),
-            open=True
-        )
-        self.page.update()
-    """
     def update_db_choice(self, e):
         self.database_choice = e.control.value  # Guarda la selección
         print(f"Base de datos seleccionada: {self.database_choice}")  # Para debug
@@ -380,60 +373,93 @@ class UI:
             )
         print(f"Configuración {self.database_choice.upper()} guardada")
 
-
-    def guardar_modelo(self, e):
-        nombre_tabla = self.txt_tabla.value.strip()
-        if not nombre_tabla:
-            print("Ingresa un nombre para la tabla")
-            return
+    def _validar_campos_modelo(self) -> tuple:
+        nombres_campos = []
+        for row in self.campos_column.controls[1:]:  
+            if isinstance(row, ft.Row) and len(row.controls) >= 2:
+                nombre = row.controls[0].value.strip()
+                if nombre:  
+                    nombres_campos.append(nombre)
         
+        # Verificar duplicados
+        if len(nombres_campos) != len(set(nombres_campos)):
+            return False, nombres_campos
+        return True, nombres_campos
+    
+    async def guardar_modelo(self, e):
         try:
-            app_name = self.dd_apps.value
-            if not app_name:
-                raise ValueError
-            
-            campos = []
-            for row in self.campos_column.controls[1:]:
-                if isinstance(row, ft.Row):
-                    nombre_campo = row.controls[0].value.strip()
-                    tipo_campo = row.controls[1].value
-                    if nombre_campo:
-                        campos.append({"name": nombre_campo, "type": tipo_campo})
-              
-            models_path = Path(self.ruta_proyecto) / "mi_proyecto" / "apps" / app_name / "models.py"
-            
-            if not models_path.exists():
-                models_path.parent.mkdir(parents=True, exist_ok=True)
-                models_path.write_text("from django.db import models\n\n")
-            
-            if not (Path(self.ruta_proyecto) / "apps" / app_name).exists():
-                print(f"La app {app_name} no existe en el proyecto")
+            nombre_tabla = self.txt_tabla.value.strip()
+            if not nombre_tabla:
+                print("Ingresa un nombre para la tabla")
                 return
             
-            with open(models_path, "a") as f:
-                f.write(f"\nclass {nombre_tabla}(models.Model):\n")
-                for campo in campos:
-                    f.write(f"    {campo['name']} = models.{campo['type']}\n")
+            if not self.dd_apps.value:
+                print("Selecciona una app primero")
+                return
+    
+            app_name = self.dd_apps.value.replace(" (pendiente)", "")
+            app_dir = Path(self.ruta_proyecto) / "apps" / app_name
+            app_dir.mkdir(parents=True, exist_ok=True)
+                    
+            models_path = app_dir / "models.py"
+            modelo_existente = ""
+            if models_path.exists():
+                with open(models_path, "r") as f:
+                    modelo_existente = f.read()
+
+            if "from django.db import models" not in modelo_existente:
+                modelo_existente = "from django.db import models\n\n" + modelo_existente
+            campos = self.obtener_campos()
+            codigo_modelo = f"\nclass {nombre_tabla}(models.Model):\n"
+            for campo in campos:
+                codigo_modelo += f"    {campo['name']} = models.{campo['type']}()\n"
             
-            admin_path = models_path.parent / "admin.py"
-            if not admin_path.exists():
-                admin_path.write_text("from django.contrib import admin\nfrom .models import *\n\n")
+            with open(models_path, "w") as f:
+                f.write(modelo_existente + codigo_modelo)
             
-            with open(admin_path, "a") as f:
-                f.write(f"admin.site.register({nombre_tabla})\n")
+            admin_path = app_dir / "admin.py"
+            admin_existente = ""
+            if admin_path.exists():
+                with open(admin_path, "r") as f:
+                    admin_existente = f.read()
             
-            if hasattr(self, 'ruta_proyecto') and self.ruta_proyecto:
-                manage_py = Path(self.ruta_proyecto) / "mi_proyecto" / "manage.py"
-                subprocess.run(["python", str(manage_py), "makemigrations", app_name], check=True)
-                subprocess.run(["python", str(manage_py), "migrate"], check=True)
-            
-            print(f"Modelo '{nombre_tabla}' creado en {app_name}/models.py y migrado")
-            
-        except subprocess.CalledProcessError:
-            print("Modelo creado pero falló migración", color="orange")
-        except Exception as ex:
-            print(f"Error: {str(ex)}")
+            if "from django.contrib import admin" not in admin_existente:
+                admin_existente = "from django.contrib import admin\n\n" + admin_existente
         
+            if f"from .models import {nombre_tabla}" not in admin_existente:
+                admin_existente += f"\nfrom .models import {nombre_tabla}\n"
+            
+            if f"admin.site.register({nombre_tabla})" not in admin_existente:
+                admin_existente += f"\nadmin.site.register({nombre_tabla})\n"
+            
+            with open(admin_path, "w") as f:
+                f.write(admin_existente)
+            
+            print(f"Modelo '{nombre_tabla}' creado en {app_name}/models.py")
+
+            if hasattr(self, 'ruta_proyecto') and self.ruta_proyecto:
+                try:
+                    venv_python = str(Path(self.ruta_base) / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python")
+                    manage_py = Path(self.ruta_proyecto) / "manage.py"
+                    
+                    if venv_python and manage_py.exists():
+                        subprocess.run(
+                            [venv_python, str(manage_py), "makemigrations", app_name],
+                            check=True,
+                            cwd=str(self.ruta_proyecto))
+                        subprocess.run(
+                            [venv_python, str(manage_py), "migrate"],
+                            check=True,
+                            cwd=str(self.ruta_proyecto))
+                        print("¡Migraciones aplicadas exitosamente!")
+                except subprocess.CalledProcessError as e:
+                    print(f"Error en migraciones: {e.stderr}")
+                
+            self.page.update()
+
+        except Exception as ex:
+            print(f"Error al guardar modelo: {str(ex)}")   
+
 
     def obtener_campos(self) -> list:
         """Recolecta campos desde la UI"""
@@ -448,49 +474,76 @@ class UI:
                     # Agregar más parámetros según necesidad
                 })
         return campos
+    
 
-    def generar_proyecto(self, e):
+    async def generar_proyecto(self, e):
         try:
             if not self.ruta_base:
-                raise ValueError("Selecciona una ubicación para el proyecto primero.")
+                raise ValueError("Selecciona una ubicación para el proyecto primero")
 
-            if hasattr(self, 'txt_tabla') and self.txt_tabla.value.strip():
-                nombre_tabla = self.txt_tabla.value.strip()
-                campos = []
-                for row in self.campos_column.controls[1:]:  
-                    if isinstance(row, ft.Row):
-                        nombre_campo = row.controls[0].value.strip()
-                        tipo_campo = row.controls[1].value
-                        if nombre_campo:  # Ignorar campos vacíos
-                            campos.append({"name": nombre_campo, "type": tipo_campo})
+            project_path = Path(self.ruta_proyecto) if hasattr(self, 'ruta_proyecto') else Path(self.ruta_base) / "Mi_proyecto"
+            
+            # 1. Generar archivos de configuración (settings.py, etc.)
+            self.db_config.generate_files(str(project_path))
+            
+            venv_python = str(Path(self.ruta_base) / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python")
+            manage_py = project_path / "manage.py"
+            
+            if not manage_py.exists():
+                if not hasattr(self, 'django_manager'):
+                    self.django_manager = DjangoManager()
                 
-                if campos and self.dd_apps.value:
-                    app_name = self.dd_apps.value.replace(" (pendiente)", "")
-                    self.db_config.add_model(app_name, nombre_tabla, campos)
-
-            self.db_config.generate_files(self.ruta_base)
-
-            if hasattr(self, 'ruta_proyecto') and self.ruta_proyecto:
-                manage_py = Path(self.ruta_proyecto) / "manage.py"
-                subprocess.run(["python", str(manage_py), "makemigrations"], check=True)
-                subprocess.run(["python", str(manage_py), "migrate"], check=True)
-            print("Proyecto generado correctamente con todos los modelos")    
-
-        except subprocess.CalledProcessError:
-            print("Modelos creados pero falló la migración")
+                success = self.django_manager.create_standard_project(
+                    env_path=str(Path(self.ruta_base) / "venv"),
+                    project_name="Mi_proyecto",
+                    project_dir=str(project_path.parent)  # ¡Cambio crucial aquí!
+                )
+                if not success:
+                    raise Exception("Falló la creación del proyecto base Django")
+            
+            if manage_py.exists():
+                try:
+                    subprocess.run(
+                        [venv_python, str(manage_py), "makemigrations"],
+                        check=True,
+                        cwd=str(project_path)
+                    )
+                    subprocess.run(
+                        [venv_python, str(manage_py), "migrate"],
+                        check=True,
+                        cwd=str(project_path)
+                    )
+                    print("¡Proyecto configurado y migraciones aplicadas!")
+                except subprocess.CalledProcessError as e:
+                    print(f"Error en migraciones: {e.stderr}")
+            else:
+                print("No se encontró manage.py")
+                
         except Exception as ex:
-            print(f"Error: {str(ex)}")
-
+            print(f"Error crítico: {str(ex)}")
 
     def update_folder_name(self, e):
-        #Actualizar nombre
-        self.logic.folder_name = e.control.value
+        folder_name = e.control.value.strip()
+        if not folder_name:
+            print("El nombre no puede estar vacío")
+            return
+
+        invalid_chars = set('/\\:*?"<>|')
+        if any(char in invalid_chars for char in folder_name):
+            print("Nombre inválido: no usar /, \\, :, *, ?, \", <, >, |")
+            return
+        
+        self.logic.folder_name = folder_name
+        self.txt_folder_name.value = folder_name
+        self.page.update()
     
     async def select_folder(self, e):
             
             try:
                 selected_path = await self.logic.open_folder_dialog()
                 if selected_path:
+                    selected_path = os.path.normpath(selected_path)
+                    self.ruta_base = selected_path
                     self.lbl_path.value = selected_path
                     self.lbl_path.color = ft.colors.BLACK
                     self.page.update()
@@ -504,10 +557,13 @@ class UI:
                 self.page.update()
 
     async def create_folder(self, e):
+        if not hasattr(self, 'logic'):
+            print("Error interno: no se pudo inicializar la lógica de carpetas")
+            return
         #Crear carpeta
         success, message, full_path = self.logic.create_folder_action()
         if success:
-            self.ruta_base= str(full_path)
+            self.ruta_base= os.path.normpath(full_path)
             self.lbl_path.value = full_path
             self.lbl_path.color = ft.colors.BLACK
 
@@ -639,51 +695,40 @@ class UI:
         self.page.update()
 
     def generar_apps(self, e):
-        if not hasattr(self, 'ruta_proyecto') or not self.ruta_proyecto:
-            print("Primero crea el proyecto Django")
-            return
-        
         try:
             project_dir = Path(self.ruta_proyecto)
-            print(f"\n[DEBUG] Ruta confirmada: {project_dir}")
-            print(f"Contenido: {[f.name for f in project_dir.glob('*')]}")
             
+            # Crear directorio apps si no existe
             apps_dir = project_dir / "apps"
             apps_dir.mkdir(exist_ok=True)
-
-            settings_path=None
-            possible_paths = [
-                project_dir / "settings.py",
-                project_dir / project_dir.name / "settings.py",
-                project_dir / self.txt_nombre_proyecto.value.strip() / "settings.py"
-            ]
-
-            for path in possible_paths:
-                if path.exists():
-                    settings_path = path
-                    break
-
-            if not settings_path:
-                settings_files = list(project_dir.glob('**/settings.py'))
-                if settings_files:
-                    settings_path = settings_files[0]
-                else:
-                    raise FileNotFoundError("No se encontró settings.py en el proyecto")        
-            print(f"Usando settings.py en: {settings_path}")
             
+            # Asegurar que cada app tenga estructura completa
             for app_name in self.apps_a_crear:
-                app_path = apps_dir / app_name
-                app_path.mkdir(exist_ok=False)
+                app_dir = apps_dir / app_name
+                app_dir.mkdir(exist_ok=True)
                 
-                (app_path / "__init__.py").touch()
-                (app_path / "apps.py").write_text(f"""from django.apps import AppConfig
+                # Archivos esenciales
+                (app_dir / "__init__.py").touch()
+                
+                # apps.py completo
+                with open(app_dir / "apps.py", "w") as f:
+                    f.write(f"""from django.apps import AppConfig
 
-    class {app_name.capitalize()}Config(AppConfig):
-        default_auto_field = 'django.db.models.BigAutoField'
-        name = 'apps.{app_name}'
-                """)
-                
-                with open(settings_path, 'r+') as f:
+class {app_name.capitalize()}Config(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'apps.{app_name}'
+    label = '{app_name.lower()}'
+""")
+            
+            # models.py vacío si no existe
+            if not (app_dir / "models.py").exists():
+                with open(app_dir / "models.py", "w") as f:
+                    f.write("from django.db import models\n\n# Modelos aquí\n")
+            
+            # Actualizar settings.py
+            settings_path = project_dir / "Mi_proyecto" / "settings.py"
+            if settings_path.exists():
+                with open(settings_path, "r+") as f:
                     content = f.read()
                     if f"'apps.{app_name}'" not in content:
                         new_content = content.replace(
@@ -693,24 +738,15 @@ class UI:
                         f.seek(0)
                         f.write(new_content)
                         f.truncate()
-                
-                print(f"App '{app_name}' creada y registrada en settings.py")
-                
-                if app_name not in self.apps_generadas:
-                 self.apps_generadas.append(app_name)
-            
-            self.actualizar_dropdown_apps()
+        
+        # Limpiar lista y actualizar UI
             self.apps_a_crear.clear()
             self.lista_apps.controls.clear()
-
-            self.dd_apps.options = [
-                ft.dropdown.Option(app) for app in self.apps_generadas
-            ]
-
+            self.actualizar_dropdown_apps()
             self.page.update()
-            
+        
         except Exception as ex:
-            print(f"Error: {str(ex)}")
+            print(f"Error al generar apps: {str(ex)}" )
         
 
     def build(self):
