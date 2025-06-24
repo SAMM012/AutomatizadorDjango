@@ -152,42 +152,26 @@ class DatabaseConfig:
     #Métodos para añadir apps a Setting.py
         
     def create_django_app(self, app_name: str, project_path: str) -> bool:
-        """Versión 100% funcional"""
         try:
-            project_path = Path(project_path)
-            apps_dir = project_path / "apps"
-            
-            # 1. Crear estructura de directorios
-            app_path = apps_dir / app_name
+            app_path = Path(project_path) / "apps" / app_name
             app_path.mkdir(parents=True, exist_ok=True)
             
-            # 2. Crear archivos básicos manualmente
-            app_files = {
-                "__init__.py": "",
-                "apps.py": f"""
+            # Crear solo los archivos básicos si no existen
+            (app_path / "__init__.py").touch(exist_ok=True)
+            (app_path / "apps.py").write_text(f"""
     from django.apps import AppConfig
 
     class {app_name.capitalize()}Config(AppConfig):
         default_auto_field = 'django.db.models.BigAutoField'
         name = 'apps.{app_name}'
-                """,
-                "models.py": "from django.db import models\n\n# Modelos aquí",
-                "admin.py": "from django.contrib import admin\n\n# Registros aquí",
-                "views.py": "from django.shortcuts import render\n\n# Vistas aquí"
-            }
-            
-            for filename, content in app_files.items():
-                (app_path / filename).write_text(content.strip())
+    """.strip(), exist_ok=True)
+            (app_path / "models.py").write_text("from django.db import models\n\n# Modelos aquí\n", exist_ok=True)
+            (app_path / "admin.py").write_text("from django.contrib import admin\n\n# Registra tus modelos aquí\n", exist_ok=True)
+            (app_path / "views.py").write_text("from django.shortcuts import render\n\n# Vistas aquí\n", exist_ok=True)
             
             return True
-            
         except Exception as e:
-            error_msg = f"""
-            Error crítico al crear app:
-            Ruta usada: {project_path}
-            Error: {str(e)}
-            """
-            print(error_msg)
+            print(f"Error al crear app: {e}")
             return False
 
 

@@ -294,3 +294,79 @@ def guardar_modelo(self, e):
             traceback.print_exc()  # Error completo
             print(f"Error: {str(ex)}" )
 """
+"""
+ async def guardar_modelo(self, e):
+        try:
+            nombre_tabla = self.txt_tabla.value.strip()
+            if not nombre_tabla:
+                print("Ingresa un nombre para la tabla")
+                return
+            
+            if not self.dd_apps.value:
+                print("Selecciona una app primero")
+                return
+    
+            app_name = self.dd_apps.value.replace(" (pendiente)", "")
+            app_dir = Path(self.ruta_proyecto) / "apps" / app_name
+            app_dir.mkdir(parents=True, exist_ok=True)
+                    
+            models_path = app_dir / "models.py"
+            modelo_existente = ""
+            if models_path.exists():
+                with open(models_path, "r") as f:
+                    modelo_existente = f.read()
+
+            if "from django.db import models" not in modelo_existente:
+                modelo_existente = "from django.db import models\n\n" + modelo_existente
+            campos = self.obtener_campos()
+            codigo_modelo = f"\nclass {nombre_tabla}(models.Model):\n"
+            for campo in campos:
+                codigo_modelo += f"    {campo['name']} = models.{campo['type']}()\n"
+            
+            with open(models_path, "w") as f:
+                f.write(modelo_existente + codigo_modelo)
+            
+            admin_path = app_dir / "admin.py"
+            admin_existente = ""
+            if admin_path.exists():
+                with open(admin_path, "r") as f:
+                    admin_existente = f.read()
+            
+            if "from django.contrib import admin" not in admin_existente:
+                admin_existente = "from django.contrib import admin\n\n" + admin_existente
+        
+            if f"from .models import {nombre_tabla}" not in admin_existente:
+                admin_existente += f"\nfrom .models import {nombre_tabla}\n"
+            
+            if f"admin.site.register({nombre_tabla})" not in admin_existente:
+                admin_existente += f"\nadmin.site.register({nombre_tabla})\n"
+            
+            with open(admin_path, "w") as f:
+                f.write(admin_existente)
+            
+            print(f"Modelo '{nombre_tabla}' creado en {app_name}/models.py")
+
+            if hasattr(self, 'ruta_proyecto') and self.ruta_proyecto:
+                try:
+                    venv_python = str(Path(self.ruta_base) / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python")
+                    manage_py = Path(self.ruta_proyecto) / "manage.py"
+                    
+                    if venv_python and manage_py.exists():
+                        subprocess.run(
+                            [venv_python, str(manage_py), "makemigrations", app_name],
+                            check=True,
+                            cwd=str(self.ruta_proyecto))
+                        subprocess.run(
+                            [venv_python, str(manage_py), "migrate"],
+                            check=True,
+                            cwd=str(self.ruta_proyecto))
+                        print("¡Migraciones aplicadas exitosamente!")
+                except subprocess.CalledProcessError as e:
+                    print(f"Error en migraciones: {e.stderr}")
+                
+            self.page.update()
+
+        except Exception as ex:
+            print(f"Error al guardar modelo: {str(ex)}")   
+
+"""
