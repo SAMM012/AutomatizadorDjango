@@ -389,120 +389,135 @@ class UI:
     
     async def guardar_modelo(self, e):
         try:
-            print("\n=== INICIO DE guardar_modelo() ===")  # Debug 1
+            print("\n=== INICIO DE guardar_modelo() ===")
             
-            # Validaciones básicas
+            # 1. Validaciones básicas
             nombre_tabla = self.txt_tabla.value.strip()
             if not nombre_tabla:
-                print("Ingresa un nombre para la tabla")
+                self.mostrar_error("Ingresa un nombre para la tabla")
                 return
                 
             if not self.dd_apps.value:
-                print("Selecciona una app primero")
+                self.mostrar_error("Selecciona una app primero")
                 return
                 
             app_name = self.dd_apps.value.replace(" (pendiente)", "")
             app_dir = Path(self.ruta_proyecto) / "apps" / app_name
             
-            print(f"\n1. Ruta de la app: {app_dir}")  # Debug 2
-            print(f"2. ¿Existe directorio?: {app_dir.exists()}")  # Debug 3
+            print(f"1. Ruta de la app: {app_dir}")
+            print(f"2. ¿Existe directorio?: {app_dir.exists()}")
             
             if not app_dir.exists():
-                print(f"La app {app_name} no existe. Genera la app primero.")
+                self.mostrar_error(f"La app {app_name} no existe. Genera la app primero.")
                 return
             
+            # 2. Obtener y validar campos
+            campos = []
+            for row in self.campos_column.controls[1:]:  # Saltar encabezado
+                if isinstance(row, ft.Row) and len(row.controls) >= 2:
+                    nombre = row.controls[0].value.strip()
+                    tipo = row.controls[1].value
+                    if nombre and tipo:
+                        campos.append({"name": nombre, "type": tipo})
+            
+            print(f"3. Campos obtenidos: {campos}")
+            
+            if not campos:
+                self.mostrar_error("Añade al menos un campo válido al modelo")
+                return
+            
+            # 3. Mapeo de tipos válidos
             TIPOS_VALIDOS = {
-            'CharField': 'CharField(max_length=100)',
-            'IntegerField': 'IntegerField()',
-            'TextField': 'TextField()',
-            'BooleanField': 'BooleanField()',
-            'DateTimeField': 'DateTimeField(auto_now_add=True)',
-            'EmailField': 'EmailField()',
-            'ForeignKey': 'ForeignKey(to="self", on_delete=models.CASCADE)'
+                'CharField': 'CharField(max_length=100)',
+                'IntegerField': 'IntegerField()',
+                'TextField': 'TextField()',
+                'BooleanField': 'BooleanField()',
+                'DateTimeField': 'DateTimeField(auto_now_add=True)',
+                'EmailField': 'EmailField()',
+                'ForeignKey': 'ForeignKey(to="self", on_delete=models.CASCADE)'
             }
-
+            
+            # 4. Generar contenido del modelo
+            models_path = app_dir / "models.py"
+            print(f"4. Ruta models.py: {models_path}")
+            
+            # Leer contenido existente o crear nuevo
+            contenido = "from django.db import models\n\n"
+            if models_path.exists():
+                with open(models_path, "r") as f:
+                    contenido = f.read()
+            
+            print(f"5. Contenido inicial models.py:\n{contenido[:200]}...")
+            
+            # Generar nuevo modelo con tipos validados
             nuevo_modelo = f"class {nombre_tabla}(models.Model):\n"
             for campo in campos:
                 tipo_campo = campo['type']
                 if tipo_campo not in TIPOS_VALIDOS:
                     tipo_campo = 'CharField'
-                    print(f"Tipo '{campo['type']}' no válido. Usando CharField", color="orange")
-                
-                nuevo_modelo += f"    {campo['name']} = models.{TIPOS_VALIDOS[tipo_campo]}\n"
-
-            # Obtener campos
-            campos = self.obtener_campos()
-            if not campos:
-                print("Añade al menos un campo al modelo")
-                return
-                
-            print(f"3. Campos obtenidos: {campos}")  # Debug 4
-
-            # Generar contenido del modelo
-            models_path = app_dir / "models.py"
-            print(f"4. Ruta models.py: {models_path}")  # Debug 5
-            
-            contenido = "from django.db import models\n\n"
-            if models_path.exists():
-                with open(models_path, "r") as f:
-                    contenido = f.read()
+                    print(f"Tipo '{campo['type']}' no válido. Usando CharField")
                     
-            print(f"5. Contenido inicial models.py:\n{contenido[:200]}...")  # Debug 6
-
-            # Generar nuevo modelo
-            nuevo_modelo = f"\nclass {nombre_tabla}(models.Model):\n"
-            for campo in campos:
-                nuevo_modelo += f"    {campo['name']} = models.{campo['type']}()\n"
-                
-            print(f"6. Nuevo modelo generado:\n{nuevo_modelo}")  # Debug 7
-
-            # Escribir archivo (modo 'w' para sobrescribir completamente)
+                nuevo_modelo += f"    {campo['name']} = models.{TIPOS_VALIDOS[tipo_campo]}\n"
+            
+            print(f"6. Nuevo modelo generado:\n{nuevo_modelo}")
+            
+            # 5. Actualizar archivo models.py
+            # Buscar y reemplazar el modelo si ya existe
+            patron = re.compile(rf"class {nombre_tabla}\(models\.Model\):.*?\n\n", re.DOTALL)
+            if patron.search(contenido):
+                contenido = patron.sub(nuevo_modelo, contenido)
+            else:
+                contenido += "\n" + nuevo_modelo
+            
             with open(models_path, "w") as f:
-                f.write(contenido.split("from django.db import models")[0] + "from django.db import models\n\n" + nuevo_modelo)
-                
-            print(f"7. Archivo models.py escrito exitosamente")  # Debug 8
-
-            # Admin.py
+                f.write(contenido)
+            
+            print("7. Archivo models.py actualizado exitosamente")
+            
+            # 6. Actualizar admin.py
             admin_path = app_dir / "admin.py"
             admin_content = "from django.contrib import admin\n"
+            
             if admin_path.exists():
                 with open(admin_path, "r") as f:
                     admin_content = f.read()
-                    
+            
+            # Asegurar importación del modelo
             if f"from .models import {nombre_tabla}" not in admin_content:
                 admin_content += f"\nfrom .models import {nombre_tabla}\n"
-                
+            
+            # Asegurar registro del modelo
             if f"admin.site.register({nombre_tabla})" not in admin_content:
                 admin_content += f"\nadmin.site.register({nombre_tabla})\n"
-                
+            
             with open(admin_path, "w") as f:
                 f.write(admin_content)
-                
-            print(f"8. Archivo admin.py actualizado")  # Debug 9
-
-            # Migraciones
+            
+            print("8. Archivo admin.py actualizado")
+            
+            # 7. Ejecutar migraciones
             venv_python = Path(self.ruta_base) / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python"
             manage_py = Path(self.ruta_proyecto) / "manage.py"
             
-            print(f"9. Ejecutando migraciones para app: {app_name}")  # Debug 10
+            print(f"9. Ejecutando migraciones para {app_name}...")
             
             subprocess.run(
                 [str(venv_python), str(manage_py), "makemigrations", app_name],
                 check=True,
-                cwd=str(self.ruta_proyecto)
-            )
+                cwd=str(self.ruta_proyecto))
             subprocess.run(
                 [str(venv_python), str(manage_py), "migrate"],
                 check=True,
-                cwd=str(self.ruta_proyecto)
-            )
+                cwd=str(self.ruta_proyecto))
             
-            print("10. Migraciones aplicadas exitosamente")  # Debug 11
-            print(f"Modelo '{nombre_tabla}' creado y migrado correctamente")
+            print("10. Migraciones aplicadas exitosamente")
+            print(f"Modelo '{nombre_tabla}' guardado y migrado")
             
         except Exception as ex:
-            print(f"\n=== ERROR ===\n{str(ex)}\n=============")  # Debug 12
+            print(f"\n=== ERROR ===\n{str(ex)}\n=============")
             print(f"Error al guardar modelo: {str(ex)}")
+            import traceback
+            traceback.print_exc()
 
     def obtener_campos(self) -> list:
         campos = []
