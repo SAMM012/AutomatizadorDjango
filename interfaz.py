@@ -845,76 +845,23 @@ class UI:
             if not hasattr(self, 'ruta_proyecto') or not self.ruta_proyecto:
                 print("Primero crea el proyecto Django")
                 return
-            project_dir = Path(self.ruta_proyecto)
             
-            # Crear directorio apps si no existe
-            apps_dir = project_dir / "apps"
-            apps_dir.mkdir(exist_ok=True)
+            # Llamar al método migrado en DjangoManager
+            resultado = DjangoManager.generar_apps_legacy(self.ruta_proyecto, self.apps_a_crear)
             
-            # Asegurar que cada app tenga estructura completa
-            for app_name in self.apps_a_crear:
-                app_dir = apps_dir / app_name
-                app_dir.mkdir(exist_ok=True)
-                
-                # Archivos esenciales
-                init_file = app_dir / "__init__.py"
-                if not init_file.exists():
-                    init_file.touch()
-                
-                # apps.py completo
-                apps_py = app_dir / "apps.py"
-                if not apps_py.exists():
-                    with open(apps_py, "w") as f:
-                        f.write(f"""from django.apps import AppConfig
-
-class {app_name.capitalize()}Config(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'apps.{app_name}'
-""")
-
-            # models.py vacío si no existe
-                models_py = app_dir / "models.py"
-                if not models_py.exists():
-                    with open(models_py, "w") as f:
-                        f.write("from django.db import models\n\n# Modelos aquí\n")
-                # admin.py (vacío)
-                admin_py = app_dir / "admin.py"
-                if not admin_py.exists():
-                    with open(admin_py, "w") as f:
-                        f.write("from django.contrib import admin\n\n# Registra tus modelos aquí\n")
-                
-                            # views.py (vacío)
-                views_py = app_dir / "views.py"
-                if not views_py.exists():
-                    with open(views_py, "w") as f:
-                        f.write("from django.shortcuts import render\n\n# Vistas aquí\n")
-
-                # Actualizar settings.py
-                settings_path = project_dir / "Mi_proyecto" / "settings.py"
-                if settings_path.exists():
-                    with open(settings_path, "r+") as f:
-                        content = f.read()
-                        if f"'apps.{app_name}'" not in content:
-                            new_content = content.replace(
-                                "'django.contrib.staticfiles',",
-                                f"'django.contrib.staticfiles',\n    'apps.{app_name}',"
-                            )
-                            f.seek(0)
-                            f.write(new_content)
-                            f.truncate()
-        
-        # Limpiar lista y actualizar UI
-            self.apps_generadas.extend(self.apps_a_crear)
-            self.apps_a_crear.clear()
-            self.lista_apps.controls.clear()
-
-            self.actualizar_dropdown_apps()
-            print(f"Apps generadas: {', '.join(self.apps_generadas)}")
-            self.page.update()
-        
+            if resultado["success"]:
+                # Limpiar lista y actualizar UI - EXACTAMENTE como en tu código original
+                self.apps_generadas.extend(self.apps_a_crear)
+                self.apps_a_crear.clear()
+                self.lista_apps.controls.clear()
+                self.actualizar_dropdown_apps()
+                print(f"Apps generadas: {', '.join(self.apps_generadas)}")
+                self.page.update()
+            else:
+                print(resultado["error"])
+            
         except Exception as ex:
-            print(f"Error al generar apps: {str(ex)}" )
-        
+            print(f"Error al generar apps: {str(ex)}")        
 
     async def iniciar_servidor(self, e):
         try:
