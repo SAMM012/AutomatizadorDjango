@@ -406,18 +406,26 @@ class UI:
             
         )
 
-        self.contenedores = ft.ResponsiveRow(
-            controls=[
-                self.contenedor1,
-                self.contenedor2,
-                self.contenedor3,
-                self.contenedor5,
-                self.contenedor4,
-                self.contenedor6,
-            ],
-            expand=True
-        
-        )
+        self.contenedores = ft.Column(
+                    controls=[
+                        ft.ResponsiveRow(
+                            controls=[
+                                self.contenedor1,
+                                self.contenedor2,
+                                self.contenedor3,
+                            ]
+                        ),
+                        ft.ResponsiveRow(
+                            controls=[
+                                self.contenedor5,
+                                self.contenedor4,
+                                self.contenedor6,
+                            ]
+                        )
+                    ],
+                    scroll=ft.ScrollMode.AUTO,
+                    expand=True
+                )
     
     async def crear_entorno_handler(self, e):
         nombre_entorno = self.txt_entorno.value.strip()
@@ -962,9 +970,10 @@ print("Contraseña actualizada exitosamente")
     
 def main(page: ft.Page):
 
-    page.window_min_height = 820
-    page.window_min_width = 530
+    page.window_min_height = 600
+    page.window_min_width = 400
     page.theme_mode = ft.ThemeMode.SYSTEM 
+    page.scroll = ft.ScrollMode.AUTO
 
     ui = UI(page) 
     page.add(ui.build())
