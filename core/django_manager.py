@@ -178,6 +178,108 @@ class {app_name.capitalize()}Config(AppConfig):
             print(f"Advertencia: No se encontró settings.py para registrar {app_name}")
 
     @staticmethod
+    def crear_modelo(project_path: str, app_name: str, nombre_tabla: str, campos: list, venv_path: str) -> dict:
+        """
+        Crea un modelo Django con campos especificados
+        
+        Args:
+            project_path: Ruta del proyecto Django
+            app_name: Nombre de la app donde crear el modelo
+            nombre_tabla: Nombre de la clase del modelo
+            campos: Lista de diccionarios [{"name": "campo1", "type": "CharField"}, ...]
+            venv_path: Ruta del entorno virtual para migraciones
+            
+        Returns:
+            dict: {"success": bool, "error": str}
+        """
+        try:
+            import re
+            
+            project_dir = Path(project_path)
+            app_dir = project_dir / "apps" / app_name
+            
+            # Verificar que la app existe
+            if not app_dir.exists():
+                return {"success": False, "error": f"La app {app_name} no existe"}
+            
+            # 1. Mapeo de tipos válidos
+            TIPOS_VALIDOS = {
+                'CharField': 'CharField(max_length=100)',
+                'IntegerField': 'IntegerField()',
+                'TextField': 'TextField()',
+                'BooleanField': 'BooleanField()',
+                'DateTimeField': 'DateTimeField(auto_now_add=True)',
+                'EmailField': 'EmailField()',
+                'ForeignKey': 'ForeignKey(to="self", on_delete=models.CASCADE)'
+            }
+            
+            # 2. Actualizar models.py
+            models_path = app_dir / "models.py"
+            contenido = "from django.db import models\n\n"
+            if models_path.exists():
+                with open(models_path, "r") as f:
+                    contenido = f.read()
+            
+            # Generar nuevo modelo con tipos validados
+            nuevo_modelo = f"class {nombre_tabla}(models.Model):\n"
+            for campo in campos:
+                tipo_campo = campo['type']
+                if tipo_campo not in TIPOS_VALIDOS:
+                    tipo_campo = 'CharField'
+                    print(f"Tipo '{campo['type']}' no válido. Usando CharField")
+                    
+                nuevo_modelo += f"    {campo['name']} = models.{TIPOS_VALIDOS[tipo_campo]}\n"
+            
+            # Buscar y reemplazar el modelo si ya existe
+            patron = re.compile(rf"class {nombre_tabla}\(models\.Model\):.*?\n\n", re.DOTALL)
+            if patron.search(contenido):
+                contenido = patron.sub(nuevo_modelo, contenido)
+            else:
+                contenido += "\n" + nuevo_modelo
+            
+            with open(models_path, "w") as f:
+                f.write(contenido)
+            
+            # 3. Actualizar admin.py
+            admin_path = app_dir / "admin.py"
+            admin_content = "from django.contrib import admin\n"
+            
+            if admin_path.exists():
+                with open(admin_path, "r") as f:
+                    admin_content = f.read()
+            
+            # Asegurar importación del modelo
+            if f"from .models import {nombre_tabla}" not in admin_content:
+                admin_content += f"\nfrom .models import {nombre_tabla}\n"
+            
+            # Asegurar registro del modelo
+            if f"admin.site.register({nombre_tabla})" not in admin_content:
+                admin_content += f"\nadmin.site.register({nombre_tabla})\n"
+            
+            with open(admin_path, "w") as f:
+                f.write(admin_content)
+            
+            # 4. Ejecutar migraciones
+            venv_python = Path(venv_path) / ("Scripts" if os.name == "nt" else "bin") / "python"
+            manage_py = project_dir / "manage.py"
+            
+            subprocess.run(
+                [str(venv_python), str(manage_py), "makemigrations", app_name],
+                check=True,
+                cwd=str(project_dir)
+            )
+            subprocess.run(
+                [str(venv_python), str(manage_py), "migrate"],
+                check=True,
+                cwd=str(project_dir)
+            )
+            
+            return {"success": True, "error": None}
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @staticmethod
     def generar_apps_legacy(project_path: str, apps_list: list) -> dict:
         """
         Migración exacta del método generar_apps() original

@@ -477,11 +477,13 @@ class UI:
             return False, nombres_campos
         return True, nombres_campos
     
+    # En interfaz.py - REEMPLAZAR el método guardar_modelo() existente con este:
+
     async def guardar_modelo(self, e):
         try:
             print("\n=== INICIO DE guardar_modelo() ===")
             
-            # 1. Validaciones básicas
+            # 1. Validaciones básicas (SE MANTIENEN EN UI)
             nombre_tabla = self.txt_tabla.value.strip()
             if not nombre_tabla:
                 print("Ingresa un nombre para la tabla")
@@ -492,16 +494,8 @@ class UI:
                 return
                 
             app_name = self.dd_apps.value.replace(" (pendiente)", "")
-            app_dir = Path(self.ruta_proyecto) / "apps" / app_name
             
-            print(f"1. Ruta de la app: {app_dir}")
-            print(f"2. ¿Existe directorio?: {app_dir.exists()}")
-            
-            if not app_dir.exists():
-                print(f"La app {app_name} no existe. Genera la app primero.")
-                return
-            
-            # 2. Obtener y validar campos
+            # 2. Obtener y validar campos (SE MANTIENE EN UI)
             campos = []
             for row in self.campos_column.controls[1:]:  # Saltar encabezado
                 if isinstance(row, ft.Row) and len(row.controls) >= 2:
@@ -510,98 +504,25 @@ class UI:
                     if nombre and tipo:
                         campos.append({"name": nombre, "type": tipo})
             
-            print(f"3. Campos obtenidos: {campos}")
+            print(f"Campos obtenidos: {campos}")
             
             if not campos:
                 print("Añade al menos un campo válido al modelo")
                 return
             
-            # 3. Mapeo de tipos válidos
-            TIPOS_VALIDOS = {
-                'CharField': 'CharField(max_length=100)',
-                'IntegerField': 'IntegerField()',
-                'TextField': 'TextField()',
-                'BooleanField': 'BooleanField()',
-                'DateTimeField': 'DateTimeField(auto_now_add=True)',
-                'EmailField': 'EmailField()',
-                'ForeignKey': 'ForeignKey(to="self", on_delete=models.CASCADE)'
-            }
+            # 3. Llamar al método migrado en DjangoManager (LÓGICA MIGRADA)
+            resultado = DjangoManager.crear_modelo(
+                project_path=self.ruta_proyecto,
+                app_name=app_name,
+                nombre_tabla=nombre_tabla,
+                campos=campos,
+                venv_path=str(Path(self.ruta_base) / "venv")
+            )
             
-            # 4. Generar contenido del modelo
-            models_path = app_dir / "models.py"
-            print(f"4. Ruta models.py: {models_path}")
-            
-            # Leer contenido existente o crear nuevo
-            contenido = "from django.db import models\n\n"
-            if models_path.exists():
-                with open(models_path, "r") as f:
-                    contenido = f.read()
-            
-            print(f"5. Contenido inicial models.py:\n{contenido[:200]}...")
-            
-            # Generar nuevo modelo con tipos validados
-            nuevo_modelo = f"class {nombre_tabla}(models.Model):\n"
-            for campo in campos:
-                tipo_campo = campo['type']
-                if tipo_campo not in TIPOS_VALIDOS:
-                    tipo_campo = 'CharField'
-                    print(f"Tipo '{campo['type']}' no válido. Usando CharField")
-                    
-                nuevo_modelo += f"    {campo['name']} = models.{TIPOS_VALIDOS[tipo_campo]}\n"
-            
-            print(f"6. Nuevo modelo generado:\n{nuevo_modelo}")
-            
-            # 5. Actualizar archivo models.py
-            # Buscar y reemplazar el modelo si ya existe
-            patron = re.compile(rf"class {nombre_tabla}\(models\.Model\):.*?\n\n", re.DOTALL)
-            if patron.search(contenido):
-                contenido = patron.sub(nuevo_modelo, contenido)
+            if resultado["success"]:
+                print(f"Modelo '{nombre_tabla}' guardado y migrado exitosamente")
             else:
-                contenido += "\n" + nuevo_modelo
-            
-            with open(models_path, "w") as f:
-                f.write(contenido)
-            
-            print("7. Archivo models.py actualizado exitosamente")
-            
-            # 6. Actualizar admin.py
-            admin_path = app_dir / "admin.py"
-            admin_content = "from django.contrib import admin\n"
-            
-            if admin_path.exists():
-                with open(admin_path, "r") as f:
-                    admin_content = f.read()
-            
-            # Asegurar importación del modelo
-            if f"from .models import {nombre_tabla}" not in admin_content:
-                admin_content += f"\nfrom .models import {nombre_tabla}\n"
-            
-            # Asegurar registro del modelo
-            if f"admin.site.register({nombre_tabla})" not in admin_content:
-                admin_content += f"\nadmin.site.register({nombre_tabla})\n"
-            
-            with open(admin_path, "w") as f:
-                f.write(admin_content)
-            
-            print("8. Archivo admin.py actualizado")
-            
-            # 7. Ejecutar migraciones
-            venv_python = Path(self.ruta_base) / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python"
-            manage_py = Path(self.ruta_proyecto) / "manage.py"
-            
-            print(f"9. Ejecutando migraciones para {app_name}...")
-            
-            subprocess.run(
-                [str(venv_python), str(manage_py), "makemigrations", app_name],
-                check=True,
-                cwd=str(self.ruta_proyecto))
-            subprocess.run(
-                [str(venv_python), str(manage_py), "migrate"],
-                check=True,
-                cwd=str(self.ruta_proyecto))
-            
-            print("10. Migraciones aplicadas exitosamente")
-            print(f"Modelo '{nombre_tabla}' guardado y migrado")
+                print(f"Error: {resultado['error']}")
             
         except Exception as ex:
             print(f"\n=== ERROR ===\n{str(ex)}\n=============")
