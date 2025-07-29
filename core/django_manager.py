@@ -22,7 +22,6 @@ class DjangoManager:
             return False
 
     @staticmethod
-    @staticmethod
     def create_app(project_path: str, app_name: str, python_path: str = "python") -> bool:
         try:
             manage_py = Path(project_path) / "manage.py"
