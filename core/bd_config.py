@@ -116,7 +116,7 @@ class DatabaseConfig:
         apps_dir = project_dir / "apps"
         apps_dir.mkdir(exist_ok=True)
 
-        settings_dir = project_dir / "mi_proyecto"
+        settings_dir = project_dir / "Mi_proyecto" / "settings.py"
         settings_dir.mkdir(parents=True, exist_ok=True)
         
         if not (settings_dir / "settings.py").exists():
@@ -147,32 +147,6 @@ class DatabaseConfig:
             return self._generate_postgres_config()
         else:
             raise ValueError(f"Tipo de BD no soportado: {self.db_type}")
-        
-
-    #Métodos para añadir apps a Setting.py
-        
-    def create_django_app(self, app_name: str, project_path: str) -> bool:
-        try:
-            app_path = Path(project_path) / "apps" / app_name
-            app_path.mkdir(parents=True, exist_ok=True)
-            
-            # Crear solo los archivos básicos si no existen
-            (app_path / "__init__.py").touch(exist_ok=True)
-            (app_path / "apps.py").write_text(f"""
-    from django.apps import AppConfig
-
-    class {app_name.capitalize()}Config(AppConfig):
-        default_auto_field = 'django.db.models.BigAutoField'
-        name = 'apps.{app_name}'
-    """.strip(), exist_ok=True)
-            (app_path / "models.py").write_text("from django.db import models\n\n# Modelos aquí\n", exist_ok=True)
-            (app_path / "admin.py").write_text("from django.contrib import admin\n\n# Registra tus modelos aquí\n", exist_ok=True)
-            (app_path / "views.py").write_text("from django.shortcuts import render\n\n# Vistas aquí\n", exist_ok=True)
-            
-            return True
-        except Exception as e:
-            print(f"Error al crear app: {e}")
-            return False
 
 
     def update_installed_apps(self, settings_path: str, app_name: str):

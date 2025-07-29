@@ -1,3 +1,5 @@
+import asyncio
+import threading
 import flet as ft
 from core.crear_carpeta import FolderCreatorLogic
 from core.crear_entorno import crear_entorno_virtual
@@ -65,6 +67,35 @@ class UI:
         self.lista_apps = ft.Column()  
 
         self.color_teal = "teal"
+
+        self.btn_iniciar_servidor = ft.ElevatedButton(
+            "Iniciar Servidor",
+            icon=ft.icons.PLAY_ARROW,
+            on_click=self.iniciar_servidor,
+            bgcolor=ft.colors.GREEN_800,
+            color=ft.colors.WHITE
+            )
+        
+        self.btn_detener_servidor = ft.ElevatedButton(
+            "Detener Servidor",
+            icon=ft.icons.STOP,
+            on_click=self.detener_servidor,
+            bgcolor=ft.colors.RED_800,
+            color=ft.colors.WHITE,
+            disabled=True
+            )
+        
+        self.txt_admin_user = ft.TextField(label="Nombre de admin", width=200)
+        self.txt_admin_email = ft.TextField(label="Email", width=200)
+        self.txt_admin_pass = ft.TextField(label="Contraseña", password=True, width=200)
+
+        self.btn_crear_su = ft.ElevatedButton(
+            "Crear Superusuario",
+            icon=ft.icons.PERSON_ADD,
+            on_click=lambda e: self._trigger_async_creation(),
+            bgcolor=ft.colors.BLUE_800,
+            color="white"
+        )
 
         self.contenedor1 = ft.Container(
             col=4,
@@ -267,6 +298,7 @@ class UI:
         )
 
         self.contenedor4 = ft.Container(
+            height=550,
             col=4,
             expand=True,
             bgcolor=self.color_teal,
@@ -318,6 +350,61 @@ class UI:
             )
         )
 
+        self.contenedor6 = ft.Container(
+            col=4,
+            expand=True,
+            bgcolor=self.color_teal,
+            border_radius=10,
+            padding=10,
+            content=ft.Column(
+                controls=[
+
+                    ft.Container(
+                        content=ft.Row(
+                            controls=[
+                                ft.Text("INICIAR / DETENER SERVIDOR", size=20, weight="bold")
+                            ],
+                            alignment=ft.MainAxisAlignment.CENTER
+                        )
+                    ),
+                    ft.Divider(height=1, color="black"),
+                    ft.Row(
+                        controls=[
+                            self.btn_iniciar_servidor,  
+                            self.btn_detener_servidor  
+                        ],
+                        spacing=15
+                    ),
+                    ft.Divider(height=30, color=ft.colors.TRANSPARENT),
+                    ft.Container(
+                        content=ft.Row(
+                            controls=[
+                                ft.Text("CREAR SUPER USUARIO", size=20, weight="bold")
+                            ],
+                            alignment=ft.MainAxisAlignment.CENTER
+                        )
+                    ),
+                    ft.Divider(height=1, color="black"),
+                    ft.Column(
+                        controls=[
+
+                            self.txt_admin_user,
+                            self.txt_admin_email,
+                            self.txt_admin_pass,
+                            ft.Text("* Todos los campos son obligatorios", style="italic")
+                        ]
+                    ),
+                    ft.Row(
+                        controls=[ 
+                            self.btn_crear_su
+                        ],
+                        spacing=15
+                    )        
+                ],
+                expand=True
+            )
+            
+        )
 
         self.contenedores = ft.ResponsiveRow(
             controls=[
@@ -325,8 +412,11 @@ class UI:
                 self.contenedor2,
                 self.contenedor3,
                 self.contenedor5,
-                self.contenedor4
-            ]
+                self.contenedor4,
+                self.contenedor6,
+            ],
+            expand=True
+        
         )
     
     async def crear_entorno_handler(self, e):
@@ -394,11 +484,11 @@ class UI:
             # 1. Validaciones básicas
             nombre_tabla = self.txt_tabla.value.strip()
             if not nombre_tabla:
-                self.mostrar_error("Ingresa un nombre para la tabla")
+                print("Ingresa un nombre para la tabla")
                 return
                 
             if not self.dd_apps.value:
-                self.mostrar_error("Selecciona una app primero")
+                print("Selecciona una app primero")
                 return
                 
             app_name = self.dd_apps.value.replace(" (pendiente)", "")
@@ -408,7 +498,7 @@ class UI:
             print(f"2. ¿Existe directorio?: {app_dir.exists()}")
             
             if not app_dir.exists():
-                self.mostrar_error(f"La app {app_name} no existe. Genera la app primero.")
+                print(f"La app {app_name} no existe. Genera la app primero.")
                 return
             
             # 2. Obtener y validar campos
@@ -423,7 +513,7 @@ class UI:
             print(f"3. Campos obtenidos: {campos}")
             
             if not campos:
-                self.mostrar_error("Añade al menos un campo válido al modelo")
+                print("Añade al menos un campo válido al modelo")
                 return
             
             # 3. Mapeo de tipos válidos
@@ -668,7 +758,9 @@ class UI:
                     color=ft.colors.WHITE
                 )
             ],
-            expand=True
+            expand=True,
+            scroll=True
+
         )
 
     def añadir_campo(self, e):
@@ -823,6 +915,179 @@ class {app_name.capitalize()}Config(AppConfig):
         except Exception as ex:
             print(f"Error al generar apps: {str(ex)}" )
         
+
+    async def iniciar_servidor(self, e):
+        try:
+            if not hasattr(self, 'ruta_base') or not self.ruta_base:
+                print("Primero selecciona una ubicación para el proyecto")
+                return
+                
+            if not hasattr(self, 'ruta_proyecto') or not self.ruta_proyecto:
+                print("Primero genera el proyecto Django")
+                return
+
+            venv_dir = Path(self.ruta_base) / "venv"
+            scripts_dir = venv_dir / ("Scripts" if os.name == "nt" else "bin")
+            
+            python_exe = None
+            for exe_name in ["python.exe", "python", "python3"]:
+                exe_path = scripts_dir / exe_name
+                if exe_path.exists():
+                    python_exe = exe_path
+                    break
+
+            if not python_exe:
+                print(f"No se encontró el ejecutable Python en: {scripts_dir}")
+                print("Archivos disponibles en el directorio:")
+                for f in scripts_dir.iterdir():
+                    print(f" - {f.name}")
+                return
+
+            manage_py = Path(self.ruta_proyecto) / "manage.py"
+            if not manage_py.exists():
+                print(f"No se encontró manage.py en {manage_py}")
+                return
+
+            self.proceso_servidor = subprocess.Popen(
+                [str(python_exe.resolve()), str(manage_py.resolve()), "runserver"],
+                cwd=str(self.ruta_proyecto),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True  
+            )
+
+            print(f"Servidor iniciado en http://127.0.0.1:8000")
+            print(f"Python usado: {python_exe}")
+            threading.Thread(target=self.monitorear_servidor, daemon=True).start()
+            
+            self.btn_iniciar_servidor.disabled = True
+            self.btn_detener_servidor.disabled = False
+            self.page.update()
+
+        except Exception as ex:
+            error_msg = f"Error al iniciar servidor: {str(ex)}"
+            print(error_msg)
+            self.page.snack_bar = ft.SnackBar(
+                ft.Text(error_msg),
+                bgcolor=ft.colors.RED
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+
+    def monitorear_servidor(self):
+        while self.proceso_servidor.poll() is None:
+            output = self.proceso_servidor.stdout.readline().strip()
+            if output:
+                print(f"[Servidor]: {output}")
+    
+
+    def detener_servidor(self, e):
+        if hasattr(self, 'proceso_servidor') and self.proceso_servidor.poll() is None:
+            self.proceso_servidor.terminate()
+            print("Servidor detenido")
+        
+        self.btn_iniciar_servidor.disabled = False
+        self.btn_detener_servidor.disabled = True
+        self.page.update()
+
+    def _trigger_async_creation(self):
+        """Método puente síncrono para iniciar la operación async"""
+        self.page.run_task(self._crear_su_handler_wrapper)
+
+    async def _crear_su_handler_wrapper(self):
+        """Wrapper async para manejo de errores"""
+        try:
+            await self._crear_su_handler()
+        except Exception as ex:
+            print(f"Error: {str(ex)}")
+
+    async def _crear_su_handler(self):
+        """Manejador principal"""
+        if not all([
+            self.txt_admin_user.value.strip(),
+            self.txt_admin_email.value.strip(),
+            self.txt_admin_pass.value.strip()
+        ]):
+            raise ValueError("Complete todos los campos")
+        
+        await self._run_django_command([
+            "createsuperuser",
+            "--noinput",
+            f"--username={self.txt_admin_user.value}",
+            f"--email={self.txt_admin_email.value}"
+        ])
+        
+        await self._set_password()
+
+    async def _run_django_command(self, args):
+        """Ejecuta un comando de Django de forma async"""
+        proc = await asyncio.create_subprocess_exec(
+            str(Path(self.ruta_base)/"venv"/"Scripts"/"python"),
+            str(Path(self.ruta_proyecto)/"manage.py"),
+            *args,
+            cwd=str(self.ruta_proyecto),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(stderr.decode().strip())
+
+    async def _set_password(self):
+        """Establece la contraseña del superusuario"""
+        script = (f"""
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            user = User.objects.get(username='{self.txt_admin_user.value}')
+            user.set_password('{self.txt_admin_pass.value}')
+            user.save()
+            """
+        )
+        await self._run_django_command(["shell", "-c", script])
+        print("Superusuario creado exitosamente!")
+
+    def _crear_superusuario_sync(self, username: str, email: str, password: str):
+        """Lógica síncrona para crear el usuario"""
+        try:
+            venv_python = str(Path(self.ruta_base) / "venv" / "Scripts" / "python")
+            manage_py = str(Path(self.ruta_proyecto) / "manage.py")
+
+            # 1. Crear superusuario
+            subprocess.run([
+                venv_python, manage_py,
+                "createsuperuser",
+                "--noinput",
+                f"--username={username}",
+                f"--email={email}"
+            ], check=True, capture_output=True, text=True, cwd=str(self.ruta_proyecto))
+
+            # 2. Establecer contraseña
+            script = f"""
+from django.contrib.auth import get_user_model
+User = get_user_model()
+user = User.objects.get(username='{username}')
+user.set_password('{password}')
+user.save()
+print("Contraseña actualizada exitosamente")
+        """
+            subprocess.run([
+                venv_python, manage_py,
+                "shell", "-c", script
+            ], check=True, capture_output=True, text=True, cwd=str(self.ruta_proyecto))
+
+            self.page.snack_bar = ft.SnackBar(
+                ft.Text(f"Superusuario {username} creado"),
+                bgcolor=ft.colors.GREEN
+            )
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr if e.stderr else "Error desconocido al crear usuario"
+            self.page.snack_bar = ft.SnackBar(
+                ft.Text(f"{error_msg}"),
+                bgcolor=ft.colors.RED
+            )
+        finally:
+            self.page.snack_bar.open = True
+            self.page.update()
 
     def build(self):
         return self.contenedores
