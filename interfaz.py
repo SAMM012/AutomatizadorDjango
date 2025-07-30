@@ -13,6 +13,7 @@ import re
 class UI:
 
     def __init__(self, page:ft.Page):
+
         self.page = page
         self.logic = FolderCreatorLogic(page)
         self.txt_folder_name =ft.TextField(
@@ -96,6 +97,15 @@ class UI:
             bgcolor=ft.colors.BLUE_800,
             color="white"
         )
+
+        self.wizard_states = {
+            "carpeta": False,   
+            "entorno": False,       
+            "bd_config": False,    
+            "apps": False,         
+            "modelos": False,      
+            "servidor": False      
+        }
 
         self.contenedor1 = ft.Container(
             col=4,
@@ -407,27 +417,193 @@ class UI:
         )
 
         self.contenedores = ft.Column(
+            controls=[
+                ft.ResponsiveRow(
                     controls=[
-                        ft.ResponsiveRow(
-                            controls=[
-                                self.contenedor1,
-                                self.contenedor2,
-                                self.contenedor3,
-                            ]
-                        ),
-                        ft.ResponsiveRow(
-                            controls=[
-                                self.contenedor5,
-                                self.contenedor4,
-                                self.contenedor6,
-                            ]
-                        )
-                    ],
-                    scroll=ft.ScrollMode.AUTO,
-                    expand=True
+                        self._wrap_container_with_wizard(self.contenedor1, "carpeta", 1, "Crear carpeta del proyecto"),
+                        self._wrap_container_with_wizard(self.contenedor2, "entorno", 2, "Crear entorno virtual"),
+                        self._wrap_container_with_wizard(self.contenedor3, "bd_config", 3, "Configurar base de datos"),
+                    ]
+                ),
+                ft.ResponsiveRow(
+                    controls=[
+                        self._wrap_container_with_wizard(self.contenedor5, "apps", 4, "Crear Apps Django"),
+                        self._wrap_container_with_wizard(self.contenedor4, "modelos", 5, "Crear modelos"),
+                        self._wrap_container_with_wizard(self.contenedor6, "servidor", 6, "Servidor y usuarios"),
+                    ]
                 )
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
+        )
+
+    def _create_disabled_overlay(self):
+        return ft.Container(
+            # Cubre todo el contenedor padre
+            expand=True,
+            width=float('inf'),  
+            height=float('inf'), 
+            bgcolor=ft.colors.with_opacity(0.6, "grey"),  
+            border_radius=10,
+            alignment=ft.alignment.center,
+            content=ft.Column(
+                controls=[
+                    ft.Icon(ft.icons.LOCK, size=50, color="white"),
+                    ft.Text(
+                        "Completa el paso anterior",
+                        color="white",
+                        weight=ft.FontWeight.BOLD,
+                        text_align=ft.TextAlign.CENTER,
+                        size=16
+                    )
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=15,
+                tight=True
+            )
+        )
+
+    def _create_step_indicator(self, step_number: int, title: str, is_completed: bool, is_current: bool):
+        """Crea indicador de paso en la parte superior de cada panel"""
+        if is_completed:
+            icon = ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN, size=20)
+            title_color = ft.colors.GREEN
+        elif is_current:
+            icon = ft.Icon(ft.icons.RADIO_BUTTON_UNCHECKED, color=ft.colors.BLUE, size=20)
+            title_color = ft.colors.BLUE
+        else:
+            icon = ft.Icon(ft.icons.LOCK, color=ft.colors.GREY_400, size=20)
+            title_color = ft.colors.GREY_400
+        
+        return ft.Row(
+            controls=[
+                ft.Container(
+                    width=30,
+                    height=30,
+                    bgcolor=ft.colors.with_opacity(0.1, title_color),
+                    border_radius=15,
+                    alignment=ft.alignment.center,
+                    content=ft.Text(str(step_number), color=title_color, weight=ft.FontWeight.BOLD)
+                ),
+                icon,
+                ft.Text(title, color=title_color, weight=ft.FontWeight.BOLD, size=16)
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=5
+        )
+
+    def _wrap_container_with_wizard(self, container, step_key: str, step_number: int, title: str):
+        """Versión alternativa - overlay como Container absoluto"""
+        
+        is_completed = self.wizard_states[step_key]
+        is_current = self._is_current_step(step_key)
+        is_enabled = is_completed or is_current
+        
+        # Actualizar header
+        if hasattr(container.content, 'controls') and len(container.content.controls) > 0:
+            container.content.controls[0] = ft.Container(
+                expand=True,
+                alignment=ft.alignment.center,
+                content=self._create_step_indicator(step_number, title, is_completed, is_current)
+            )
+        
+        if is_enabled:
+            return ft.Container(
+                col=4,
+                expand=True,
+                content=container.content,
+                bgcolor=container.bgcolor,
+                border_radius=container.border_radius,
+                padding=container.padding
+            )
+        else:
+            # Overlay como Container que se superpone
+            return ft.Container(
+                col=4,
+                expand=True,
+                content=ft.Stack(
+                    controls=[
+                        # Contenedor original
+                        ft.Container(
+                            expand=True,
+                            content=container.content,
+                            bgcolor=container.bgcolor,
+                            border_radius=container.border_radius,
+                            padding=container.padding
+                        ),
+  
+                        ft.Container(
+                            left=0,
+                            top=0,
+                            right=0,
+                            bottom=0,
+                            bgcolor=ft.colors.with_opacity(0.85, "grey"),
+                            border_radius=10,
+                            alignment=ft.alignment.center,
+                            content=ft.Column(
+                                controls=[
+                                    ft.Icon(ft.icons.LOCK, size=50, color="white"),
+                                    ft.Text(
+                                        "Completa el paso anterior",
+                                        color="white",
+                                        weight=ft.FontWeight.BOLD,
+                                        size=16
+                                    )
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
+                                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                spacing=15
+                            )
+                        )
+                    ]
+                )
+            )
+
+    def _is_current_step(self, step_key: str) -> bool:
+        """Determina si este es el paso actual disponible"""
+        steps_order = ["carpeta", "entorno", "bd_config", "apps", "modelos", "servidor"]
+        
+        for i, step in enumerate(steps_order):
+            if step == step_key:
+                if i == 0:
+                    return not self.wizard_states[step]
+                else:
+                    prev_completed = all(self.wizard_states[prev_step] for prev_step in steps_order[:i])
+                    return prev_completed and not self.wizard_states[step]
+        return False
+
+    def _update_wizard_state(self, step_key: str, completed: bool = True):
+        """Actualiza el estado del wizard y refresca la UI"""
+        self.wizard_states[step_key] = completed
+        self._refresh_wizard_ui()
+
+    def _refresh_wizard_ui(self):
+        self.contenedores.controls = [
+            ft.ResponsiveRow(
+                controls=[
+                    self._wrap_container_with_wizard(self.contenedor1, "carpeta", 1, "Crear carpeta del proyecto"),
+                    self._wrap_container_with_wizard(self.contenedor2, "entorno", 2, "Crear entorno virtual"),
+                    self._wrap_container_with_wizard(self.contenedor3, "bd_config", 3, "Configurar base de datos"),
+                ]
+            ),
+            ft.ResponsiveRow(
+                controls=[
+                    self._wrap_container_with_wizard(self.contenedor5, "apps", 4, "Crear Apps Django"),
+                    self._wrap_container_with_wizard(self.contenedor4, "modelos", 5, "Crear modelos"),
+                    self._wrap_container_with_wizard(self.contenedor6, "servidor", 6, "Servidor y usuarios"),
+                ]
+            )
+        ]
+        self.page.update()
     
     async def crear_entorno_handler(self, e):
+
+        if not self.wizard_states["carpeta"]:
+            print("Primero debes crear la carpeta del proyecto")
+            return
+
         nombre_entorno = self.txt_entorno.value.strip()
         nombre_proyecto = self.txt_nombre_proyecto.value.strip()
         
@@ -446,7 +622,7 @@ class UI:
             
             # Actualizar ruta base para las apps
             self.ruta_proyecto = str(Path(self.ruta_base) / nombre_proyecto)
-            self.page.update()
+            self._update_wizard_state("entorno", True)
             
         except Exception as ex:
             print(f" Error: {str(ex)}")
@@ -456,6 +632,11 @@ class UI:
         print(f"Base de datos seleccionada: {self.database_choice}")  # Para debug
 
     def save_db_config(self, e):
+
+        if not self.wizard_states["entorno"]:
+            print("Primero debes crear el entorno virtual")
+            return
+
         if not hasattr(self, 'database_choice'):  # Validación adicional
             self.database_choice = "sqlite"
         
@@ -471,6 +652,7 @@ class UI:
                 port="5432"
             )
         print(f"Configuración {self.database_choice.upper()} guardada")
+        self._update_wizard_state("bd_config", True)
 
     def _validar_campos_modelo(self) -> tuple:
         nombres_campos = []
@@ -633,12 +815,13 @@ class UI:
         if not hasattr(self, 'logic'):
             print("Error interno: no se pudo inicializar la lógica de carpetas")
             return
-        #Crear carpeta
         success, message, full_path = self.logic.create_folder_action()
         if success:
             self.ruta_base= os.path.normpath(full_path)
             self.lbl_path.value = full_path
             self.lbl_path.color = ft.colors.BLACK
+
+            self._update_wizard_state("carpeta", True)
 
         self.page.snack_bar = ft.SnackBar(
             ft.Text(message),
