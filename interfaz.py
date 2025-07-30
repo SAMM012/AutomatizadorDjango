@@ -1028,6 +1028,7 @@ class UI:
             print(f"Error: {str(ex)}")
 
     async def _crear_su_handler(self):
+        """Método principal para crear superusuario"""
         if not all([
             self.txt_admin_user.value.strip(),
             self.txt_admin_email.value.strip(),
@@ -1035,16 +1036,17 @@ class UI:
         ]):
             raise ValueError("Complete todos los campos")
         
-        python_path = str(self.state.get_venv_python_path())
-        manage_py = str(self.state.get_manage_py_path())
-        
-        await self._run_django_command([
-            "createsuperuser",
-            "--noinput",
-            f"--username={self.txt_admin_user.value}",
-            f"--email={self.txt_admin_email.value}"
-        ])
-        await self._set_password()
+        # Usar el método síncrono que funciona mejor
+        try:
+            self._crear_superusuario_alternativo(
+                self.txt_admin_user.value.strip(),
+                self.txt_admin_email.value.strip(),
+                self.txt_admin_pass.value.strip()
+            )
+        except Exception as e:
+            print(f"Error al crear superusuario: {str(e)}")
+            raise
+
 
     async def _run_django_command(self, args):
         python_path = str(self.state.get_venv_python_path())
@@ -1062,49 +1064,72 @@ class UI:
         if proc.returncode != 0:
             raise RuntimeError(stderr.decode().strip())
 
+
     async def _set_password(self):
-        script = f"""
+        script = f'''
+    import os
+    import django
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Mi_proyecto.settings")
+    django.setup()
+
     from django.contrib.auth import get_user_model
     User = get_user_model()
-    user = User.objects.get(username='{self.txt_admin_user.value}')
-    user.set_password('{self.txt_admin_pass.value}')
-    user.save()
-    """
+    try:
+        user = User.objects.get(username="{self.txt_admin_user.value}")
+        user.set_password("{self.txt_admin_pass.value}")
+        user.save()
+        print("Contraseña establecida correctamente")
+    except User.DoesNotExist:
+        print("Error: Usuario no encontrado")
+    except Exception as e:
+        print(f"Error: {{e}}")
+    '''.strip()
+        
         await self._run_django_command(["shell", "-c", script])
         print("Superusuario creado exitosamente!")
 
-    def _crear_superusuario_sync(self, username: str, email: str, password: str):
+    def _crear_superusuario_alternativo(self, username: str, email: str, password: str):
         try:
             venv_python = str(self.state.get_venv_python_path())
             manage_py = str(self.state.get_manage_py_path())
-            subprocess.run([
-                venv_python, manage_py,
-                "createsuperuser",
-                "--noinput",
-                f"--username={username}",
-                f"--email={email}"
+            one_liner = f"from django.contrib.auth import get_user_model; User = get_user_model(); user = User.objects.create_superuser('{username}', '{email}', '{password}'); print('Superuser created')"
+            
+            result = subprocess.run([
+                venv_python, manage_py, "shell", "-c", one_liner
             ], check=True, capture_output=True, text=True, cwd=str(self.state.ruta_proyecto))
-            script = f"""
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-    user = User.objects.get(username='{username}')
-    user.set_password('{password}')
-    user.save()
-    print("Contraseña actualizada exitosamente")
-    """
-            subprocess.run([
-                venv_python, manage_py,
-                "shell", "-c", script
-            ], check=True, capture_output=True, text=True, cwd=str(self.state.ruta_proyecto))
-
+            
+            print("Superusuario creado exitosamente!")
             self.page.snack_bar = ft.SnackBar(
                 ft.Text(f"Superusuario {username} creado"),
                 bgcolor=ft.colors.GREEN
             )
+            
         except subprocess.CalledProcessError as e:
-            error_msg = e.stderr if e.stderr else "Error desconocido al crear usuario"
+            # Si el usuario ya existe, intentar solo cambiar contraseña
+            if "already exists" in str(e.stderr):
+                try:
+                    change_pass = f"from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='{username}'); u.set_password('{password}'); u.save(); print('Password updated')"
+                    subprocess.run([
+                        venv_python, manage_py, "shell", "-c", change_pass
+                    ], check=True, capture_output=True, text=True, cwd=str(self.state.ruta_proyecto))
+                    
+                    self.page.snack_bar = ft.SnackBar(
+                        ft.Text(f"Contraseña actualizada para {username}"),
+                        bgcolor=ft.colors.ORANGE
+                    )
+                except Exception:
+                    self.page.snack_bar = ft.SnackBar(
+                        ft.Text("Error: Usuario ya existe y no se pudo actualizar"),
+                        bgcolor=ft.colors.RED
+                    )
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Error: {e.stderr}"),
+                    bgcolor=ft.colors.RED
+                )
+        except Exception as e:
             self.page.snack_bar = ft.SnackBar(
-                ft.Text(f"{error_msg}"),
+                ft.Text(f"Error: {str(e)}"),
                 bgcolor=ft.colors.RED
             )
         finally:
