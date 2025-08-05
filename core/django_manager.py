@@ -400,3 +400,46 @@ class {app_name.capitalize()}Config(AppConfig):
             
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def generar_urls_app(project_path: str, app_name: str, model_name: str) -> dict:
+        try:
+            project_dir = Path(project_path)
+            app_dir = project_dir / "apps" / app_name
+            urls_path = app_dir / "urls.py"
+            
+            if not app_dir.exists():
+                return {"success": False, "error": f"La app {app_name} no existe"}
+
+            model_lower = model_name.lower()
+            
+            urls_content = f'''from django.urls import path
+    from . import views
+
+    app_name = '{app_name}'
+
+    urlpatterns = [
+        # Lista de {model_name}s
+        path('', views.{model_lower}_lista, name='{model_lower}_lista'),
+        
+        # Detalle de {model_name}
+        path('<int:id>/', views.{model_lower}_detalle, name='{model_lower}_detalle'),
+        
+        # Crear nuevo {model_name}
+        path('crear/', views.{model_lower}_crear, name='{model_lower}_crear'),
+        
+        # Editar {model_name}
+        path('<int:id>/editar/', views.{model_lower}_editar, name='{model_lower}_editar'),
+        
+        # Eliminar {model_name}
+        path('<int:id>/eliminar/', views.{model_lower}_eliminar, name='{model_lower}_eliminar'),
+    ]
+    '''   
+            with open(urls_path, "w") as f:
+                f.write(urls_content)
+            
+            print(f"URLs de app generadas para {model_name} en {app_name}")
+            return {"success": True, "error": None}
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
