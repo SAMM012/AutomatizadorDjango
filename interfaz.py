@@ -415,27 +415,6 @@ class UI:
         )
 
         self.contenedores = ft.Column(
-            controls=[
-                ft.ResponsiveRow(
-                    controls=[
-                        self._wrap_container_with_wizard(self.contenedor1, "carpeta", 1, "Crear carpeta del proyecto"),
-                        self._wrap_container_with_wizard(self.contenedor2, "entorno", 2, "Crear entorno virtual"),
-                        self._wrap_container_with_wizard(self.contenedor3, "bd_config", 3, "Configurar base de datos"),
-                    ]
-                ),
-                ft.ResponsiveRow(
-                    controls=[
-                        self._wrap_container_with_wizard(self.contenedor5, "apps", 4, "Crear Apps Django"),
-                        self._wrap_container_with_wizard(self.contenedor4, "modelos", 5, "Crear modelos"),
-                        self._wrap_container_with_wizard(self.contenedor6, "servidor", 6, "Servidor y usuarios"),
-                    ]
-                )
-            ],
-            scroll=ft.ScrollMode.AUTO,
-            expand=True
-        )
-
-        self.contenedores = ft.Column(
                 controls=[
                     ft.ResponsiveRow(
                         controls=[
@@ -458,7 +437,6 @@ class UI:
 
     def _create_disabled_overlay(self):
         return ft.Container(
-            # Cubre todo el contenedor padre
             expand=True,
             width=float('inf'),  
             height=float('inf'), 
@@ -590,7 +568,6 @@ class UI:
         self._refresh_wizard_ui()
 
     def _refresh_wizard_ui(self):
-        """Refresca la interfaz del wizard"""
         self.contenedores.controls = [
             ft.ResponsiveRow(
                 controls=[
@@ -721,11 +698,11 @@ class UI:
 
     def obtener_campos(self) -> list:
         campos = []
-        for row in self.campos_column.controls[1:]:  # Saltar encabezado
+        for row in self.campos_column.controls[1:]: 
             if isinstance(row, ft.Row) and len(row.controls) >= 2:
                 nombre = row.controls[0].value.strip()
                 tipo = row.controls[1].value
-                if nombre and tipo:  # Solo campos válidos
+                if nombre and tipo: 
                     campos.append({"name": nombre, "type": tipo})
         return campos
     
@@ -819,7 +796,6 @@ class UI:
         self.page.update()                                     
 
     def _crear_panel_tablas(self):
-
         self.campos_column = ft.Column(
             controls=[
                 self.dd_apps,
@@ -856,11 +832,17 @@ class UI:
                     on_click=self.guardar_modelo,
                     bgcolor=ft.colors.GREEN_800,
                     color=ft.colors.WHITE
+                ),
+                ft.ElevatedButton(
+                    "PASO 1: Generar Views+Forms",
+                    icon=ft.icons.SCIENCE,
+                    on_click=self.generar_views_forms_solo,
+                    bgcolor=ft.colors.BLUE_800,
+                    color=ft.colors.WHITE
                 )
             ],
             expand=True,
             scroll=True
-
         )
 
     def añadir_campo(self, e):
@@ -1133,6 +1115,64 @@ class UI:
                 bgcolor=ft.colors.RED
             )
         finally:
+            self.page.snack_bar.open = True
+            self.page.update()
+    
+    async def generar_views_forms_solo(self, e):
+        try:
+            nombre_tabla = self.txt_tabla.value.strip()
+            if not nombre_tabla:
+                print("❌ Ingresa un nombre para la tabla primero")
+                return
+                
+            if not self.dd_apps.value:
+                print("❌ Selecciona una app primero")
+                return
+            
+            app_name = self.dd_apps.value.replace(" (pendiente)", "")
+            
+            print(f"🚀 PASO 1: Generando Views+Forms para {nombre_tabla} en app {app_name}...")
+            views_result = DjangoManager.generar_views_crud(
+                self.state.ruta_proyecto,
+                app_name, 
+                nombre_tabla
+            )
+            
+            if views_result["success"]:
+                print(f"✅ Views generadas para {nombre_tabla}")
+            else:
+                print(f"❌ Error en views: {views_result['error']}")
+                return
+            forms_result = DjangoManager.generar_forms_crud(
+                self.state.ruta_proyecto,
+                app_name, 
+                nombre_tabla
+            )
+            
+            if forms_result["success"]:
+                print(f"✅ Forms generado para {nombre_tabla}")
+                
+                self.page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Views+Forms generados para {nombre_tabla}"),
+                    bgcolor=ft.colors.GREEN
+                )
+            else:
+                print(f"❌ Error en forms: {forms_result['error']}")
+                self.page.snack_bar = ft.SnackBar(
+                    ft.Text("Error al generar Forms"),
+                    bgcolor=ft.colors.RED
+                )
+            
+            self.page.snack_bar.open = True
+            self.page.update()
+            
+        except Exception as ex:
+            error_msg = f"Error inesperado: {str(ex)}"
+            print(f"❌ {error_msg}")
+            self.page.snack_bar = ft.SnackBar(
+                ft.Text(error_msg),
+                bgcolor=ft.colors.RED
+            )
             self.page.snack_bar.open = True
             self.page.update()
 
