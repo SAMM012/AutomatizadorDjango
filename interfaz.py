@@ -981,8 +981,27 @@ class UI:
             self.state.proceso_servidor and 
             self.state.proceso_servidor.poll() is None):
             
-            self.state.proceso_servidor.terminate()
-            print("Servidor detenido")
+            try:
+                # Primero intentamos terminar suavemente
+                self.state.proceso_servidor.terminate()
+                print("Enviando señal de terminación al servidor...")
+                
+                # Esperamos un poco para que el proceso termine
+                try:
+                    self.state.proceso_servidor.wait(timeout=3)
+                    print("Servidor detenido correctamente")
+                except subprocess.TimeoutExpired:
+                    # Si no responde en 3 segundos, lo forzamos
+                    print("Forzando detención del servidor...")
+                    self.state.proceso_servidor.kill()
+                    self.state.proceso_servidor.wait()
+                    print("Servidor detenido forzosamente")
+                    
+            except Exception as ex:
+                print(f"Error al detener servidor: {ex}")
+                
+        else:
+            print("No hay servidor ejecutándose")
         
         self.btn_iniciar_servidor.disabled = False
         self.btn_detener_servidor.disabled = True
@@ -998,14 +1017,26 @@ class UI:
         # Si el proceso terminó, mostrar el código de salida
         if self.state.proceso_servidor:
             exit_code = self.state.proceso_servidor.poll()
-            if exit_code != 0:
-                print(f"SERVIDOR TERMINÓ CON ERROR (código: {exit_code})")
-                # Leer cualquier salida restante
-                remaining_output = self.state.proceso_servidor.stdout.read()
-                if remaining_output:
-                    print(f"Salida final: {remaining_output}")
-            else:
-                print("Servidor detenido normalmente")
+            if exit_code is not None:
+                if exit_code != 0:
+                    print(f"SERVIDOR TERMINÓ CON ERROR (código: {exit_code})")
+                    # Leer cualquier salida restante
+                    try:
+                        remaining_output = self.state.proceso_servidor.stdout.read()
+                        if remaining_output:
+                            print(f"Salida final: {remaining_output}")
+                    except:
+                        pass
+                else:
+                    print("Servidor detenido normalmente")
+                
+                # Actualizar estado de botones cuando el proceso termine
+                self.btn_iniciar_servidor.disabled = False
+                self.btn_detener_servidor.disabled = True
+                try:
+                    self.page.update()
+                except:
+                    pass
 
     def _trigger_async_creation(self):
         """Método puente síncrono para iniciar la operación async"""
