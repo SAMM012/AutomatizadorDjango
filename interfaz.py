@@ -832,20 +832,6 @@ class UI:
                     on_click=self.guardar_modelo,
                     bgcolor=ft.colors.GREEN_800,
                     color=ft.colors.WHITE
-                ),
-                ft.ElevatedButton(
-                    "PASO 1: Generar Views+Forms",
-                    icon=ft.icons.SCIENCE,
-                    on_click=self.generar_views_forms_solo,
-                    bgcolor=ft.colors.BLUE_800,
-                    color=ft.colors.WHITE
-                ),
-                ft.ElevatedButton(
-                    "PASO 2: Generar URLs App",
-                    icon=ft.icons.LINK,
-                    on_click=self.generar_urls_app_solo,
-                    bgcolor=ft.colors.ORANGE_800,
-                    color=ft.colors.WHITE
                 )
             ],
             expand=True,
@@ -1137,112 +1123,6 @@ class UI:
                 bgcolor=ft.colors.RED
             )
         finally:
-            self.page.snack_bar.open = True
-            self.page.update()
-    
-    async def generar_views_forms_solo(self, e):
-        try:
-            nombre_tabla = self.txt_tabla.value.strip()
-            if not nombre_tabla:
-                print("❌ Ingresa un nombre para la tabla primero")
-                return
-                
-            if not self.dd_apps.value:
-                print("❌ Selecciona una app primero")
-                return
-            
-            app_name = self.dd_apps.value.replace(" (pendiente)", "")
-            
-            print(f"🚀 PASO 1: Generando Views+Forms para {nombre_tabla} en app {app_name}...")
-            views_result = DjangoManager.generar_views_crud(
-                self.state.ruta_proyecto,
-                app_name, 
-                nombre_tabla
-            )
-            
-            if views_result["success"]:
-                print(f"✅ Views generadas para {nombre_tabla}")
-            else:
-                print(f"❌ Error en views: {views_result['error']}")
-                return
-            forms_result = DjangoManager.generar_forms_crud(
-                self.state.ruta_proyecto,
-                app_name, 
-                nombre_tabla
-            )
-            
-            if forms_result["success"]:
-                print(f"✅ Forms generado para {nombre_tabla}")
-                
-                self.page.snack_bar = ft.SnackBar(
-                    ft.Text(f"Views+Forms generados para {nombre_tabla}"),
-                    bgcolor=ft.colors.GREEN
-                )
-            else:
-                print(f"❌ Error en forms: {forms_result['error']}")
-                self.page.snack_bar = ft.SnackBar(
-                    ft.Text("Error al generar Forms"),
-                    bgcolor=ft.colors.RED
-                )
-            
-            self.page.snack_bar.open = True
-            self.page.update()
-            
-        except Exception as ex:
-            error_msg = f"Error inesperado: {str(ex)}"
-            print(f"❌ {error_msg}")
-            self.page.snack_bar = ft.SnackBar(
-                ft.Text(error_msg),
-                bgcolor=ft.colors.RED
-            )
-            self.page.snack_bar.open = True
-            self.page.update()
-
-    async def generar_urls_app_solo(self, e):
-        try:
-            nombre_tabla = self.txt_tabla.value.strip()
-            if not nombre_tabla:
-                print("❌ Ingresa un nombre para la tabla primero")
-                return
-                
-            if not self.dd_apps.value:
-                print("❌ Selecciona una app primero")
-                return
-            
-            app_name = self.dd_apps.value.replace(" (pendiente)", "")
-            
-            print(f"🚀 PASO 2: Generando URLs de app para {nombre_tabla} en app {app_name}...")
-            
-            urls_result = DjangoManager.generar_urls_app(
-                self.state.ruta_proyecto,
-                app_name, 
-                nombre_tabla
-            )
-            
-            if urls_result["success"]:
-                print(f"✅ URLs de app generadas para {nombre_tabla}")
-                
-                self.page.snack_bar = ft.SnackBar(
-                    ft.Text(f"URLs de app generadas para {nombre_tabla}"),
-                    bgcolor=ft.colors.GREEN
-                )
-            else:
-                print(f"❌ Error en URLs: {urls_result['error']}")
-                self.page.snack_bar = ft.SnackBar(
-                    ft.Text("Error al generar URLs"),
-                    bgcolor=ft.colors.RED
-                )
-            
-            self.page.snack_bar.open = True
-            self.page.update()
-            
-        except Exception as ex:
-            error_msg = f"Error inesperado: {str(ex)}"
-            print(f"❌ {error_msg}")
-            self.page.snack_bar = ft.SnackBar(
-                ft.Text(error_msg),
-                bgcolor=ft.colors.RED
-            )
             self.page.snack_bar.open = True
             self.page.update()
 

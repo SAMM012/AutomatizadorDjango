@@ -93,20 +93,20 @@ class {app_name.capitalize()}Config(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'apps.{app_name}'
 """
-            with open(apps_py, "w") as f:
+            with open(apps_py, "w", encoding='utf-8') as f:
                 f.write(apps_content)
         models_py = app_dir / "models.py"
         if not models_py.exists():
-            with open(models_py, "w") as f:
-                f.write("from django.db import models\n\n# Modelos aquí\n")        
+            with open(models_py, "w", encoding='utf-8') as f:
+                f.write("from django.db import models\n\n# Modelos aqui\n")        
         admin_py = app_dir / "admin.py"
         if not admin_py.exists():
-            with open(admin_py, "w") as f:
-                f.write("from django.contrib import admin\n\n# Registra tus modelos aquí\n")        
+            with open(admin_py, "w", encoding='utf-8') as f:
+                f.write("from django.contrib import admin\n\n# Registra tus modelos aqui\n")        
         views_py = app_dir / "views.py"
         if not views_py.exists():
-            with open(views_py, "w") as f:
-                f.write("from django.shortcuts import render\n\n# Vistas aquí\n")
+            with open(views_py, "w", encoding='utf-8') as f:
+                f.write("from django.shortcuts import render\n\n# Vistas aqui\n")
 
     @staticmethod
     def _update_settings_with_app(project_dir: Path, app_name: str, project_name: str):
@@ -173,7 +173,7 @@ class {app_name.capitalize()}Config(AppConfig):
             else:
                 contenido += "\n" + nuevo_modelo
             
-            with open(models_path, "w") as f:
+            with open(models_path, "w", encoding='utf-8') as f:
                 f.write(contenido)
             admin_path = app_dir / "admin.py"
             admin_content = "from django.contrib import admin\n"
@@ -187,7 +187,7 @@ class {app_name.capitalize()}Config(AppConfig):
             if f"admin.site.register({nombre_tabla})" not in admin_content:
                 admin_content += f"\nadmin.site.register({nombre_tabla})\n"
             
-            with open(admin_path, "w") as f:
+            with open(admin_path, "w", encoding='utf-8') as f:
                 f.write(admin_content)
             
             venv_python = Path(venv_path) / ("Scripts" if os.name == "nt" else "bin") / "python"
@@ -203,13 +203,34 @@ class {app_name.capitalize()}Config(AppConfig):
                 check=True,
                 cwd=str(project_dir)
             )
+            
+            # PASO 1: Generar views CRUD
+            print(f"PASO 1: Generando views CRUD para {nombre_tabla}...")
+            DjangoManager.generar_views_crud(str(project_dir), app_name, nombre_tabla)
+            
+            # PASO 2: Generar forms CRUD
+            print(f"PASO 2: Generando forms para {nombre_tabla}...")
+            DjangoManager.generar_forms_crud(str(project_dir), app_name, nombre_tabla)
+            
+            # PASO 3: Generar URLs de la app
+            print(f"PASO 3: Generando URLs de la app para {nombre_tabla}...")
+            DjangoManager.generar_urls_app(str(project_dir), app_name, nombre_tabla)
             print(f"URLs de app generadas para {nombre_tabla}")
-            print(f"PASO 3: Conectando {app_name} al proyecto principal...")
+            
+            # PASO 4: Conectando al proyecto principal
+            print(f"PASO 4: Conectando {app_name} al proyecto principal...")
             DjangoManager._conectar_urls_proyecto(project_dir, app_name)
+            print(f"URLs de {app_name} conectadas al proyecto principal")
             print(f"URLs conectadas al proyecto principal")
-            print(f"PASO 4: Creando página índice del proyecto...")
+            
+            # PASO 5: Generar templates HTML para CRUD
+            print(f"PASO 5: Generando templates HTML para {nombre_tabla}...")
+            DjangoManager.generar_templates_crud(str(project_dir), app_name, nombre_tabla)
+            
+            # PASO 6: Creando página índice del proyecto
+            print(f"PASO 6: Creando página índice del proyecto...")
             DjangoManager._crear_pagina_indice(project_dir)
-            print(f" Página índice creada")
+            print(f" Pagina indice creada")
 
             return {"success": True, "error": None}
             
@@ -242,16 +263,16 @@ class {app_name.capitalize()}Config(AppConfig):
 """)
                 models_py = app_dir / "models.py"
                 if not models_py.exists():
-                    with open(models_py, "w") as f:
-                        f.write("from django.db import models\n\n# Modelos aquí\n")
+                    with open(models_py, "w", encoding='utf-8') as f:
+                        f.write("from django.db import models\n\n# Modelos aqui\n")
                 admin_py = app_dir / "admin.py"
                 if not admin_py.exists():
-                    with open(admin_py, "w") as f:
-                        f.write("from django.contrib import admin\n\n# Registra tus modelos aquí\n")
+                    with open(admin_py, "w", encoding='utf-8') as f:
+                        f.write("from django.contrib import admin\n\n# Registra tus modelos aqui\n")
                 views_py = app_dir / "views.py"
                 if not views_py.exists():
-                    with open(views_py, "w") as f:
-                        f.write("from django.shortcuts import render\n\n# Vistas aquí\n")
+                    with open(views_py, "w", encoding='utf-8') as f:
+                        f.write("from django.shortcuts import render\n\n# Vistas aqui\n")
                 settings_path = project_dir / "Mi_proyecto" / "settings.py"
                 if settings_path.exists():
                     with open(settings_path, "r+") as f:
@@ -289,80 +310,80 @@ class {app_name.capitalize()}Config(AppConfig):
             model_lower = model_name.lower()
             
             views_content = f'''from django.shortcuts import render, get_object_or_404, redirect
-    from django.contrib import messages
-    from django.urls import reverse
-    from .models import {model_name}
-    from .forms import {model_name}Form
+from django.contrib import messages
+from django.urls import reverse
+from .models import {model_name}
+from .forms import {model_name}Form
 
-    def {model_lower}_lista(request):
-        """Lista todos los {model_name}s"""
-        objetos = {model_name}.objects.all()
-        return render(request, '{app_name}/{model_lower}_lista.html', {{
-            'objetos': objetos,
-            'titulo': 'Lista de {model_name}s'
-        }})
+def {model_lower}_lista(request):
+    """Lista todos los {model_name}s"""
+    objetos = {model_name}.objects.all()
+    return render(request, '{app_name}/{model_lower}_lista.html', {{
+        'objetos': objetos,
+        'titulo': 'Lista de {model_name}s'
+    }})
 
-    def {model_lower}_detalle(request, id):
-        """Muestra el detalle de un {model_name}"""
-        objeto = get_object_or_404({model_name}, id=id)
-        return render(request, '{app_name}/{model_lower}_detalle.html', {{
-            'objeto': objeto,
-            'titulo': f'Detalle de {{objeto}}'
-        }})
+def {model_lower}_detalle(request, id):
+    """Muestra el detalle de un {model_name}"""
+    objeto = get_object_or_404({model_name}, id=id)
+    return render(request, '{app_name}/{model_lower}_detalle.html', {{
+        'objeto': objeto,
+        'titulo': f'Detalle de {{objeto}}'
+    }})
 
-    def {model_lower}_crear(request):
-        """Crea un nuevo {model_name}"""
-        if request.method == 'POST':
-            form = {model_name}Form(request.POST)
-            if form.is_valid():
-                form.save()
-                messages.success(request, '{model_name} creado exitosamente.')
-                return redirect('{app_name}:{model_lower}_lista')
-        else:
-            form = {model_name}Form()
-        
-        return render(request, '{app_name}/{model_lower}_form.html', {{
-            'form': form,
-            'titulo': 'Crear {model_name}',
-            'accion': 'Crear'
-        }})
-
-    def {model_lower}_editar(request, id):
-        """Edita un {model_name} existente"""
-        objeto = get_object_or_404({model_name}, id=id)
-        
-        if request.method == 'POST':
-            form = {model_name}Form(request.POST, instance=objeto)
-            if form.is_valid():
-                form.save()
-                messages.success(request, '{model_name} actualizado exitosamente.')
-                return redirect('{app_name}:{model_lower}_detalle', id=objeto.id)
-        else:
-            form = {model_name}Form(instance=objeto)
-        
-        return render(request, '{app_name}/{model_lower}_form.html', {{
-            'form': form,
-            'objeto': objeto,
-            'titulo': f'Editar {{objeto}}',
-            'accion': 'Actualizar'
-        }})
-
-    def {model_lower}_eliminar(request, id):
-        """Elimina un {model_name}"""
-        objeto = get_object_or_404({model_name}, id=id)
-        
-        if request.method == 'POST':
-            objeto.delete()
-            messages.success(request, '{model_name} eliminado exitosamente.')
+def {model_lower}_crear(request):
+    """Crea un nuevo {model_name}"""
+    if request.method == 'POST':
+        form = {model_name}Form(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, '{model_name} creado exitosamente.')
             return redirect('{app_name}:{model_lower}_lista')
-        
-        return render(request, '{app_name}/{model_lower}_confirmar_eliminar.html', {{
-            'objeto': objeto,
-            'titulo': f'Eliminar {{objeto}}'
-        }})
-    '''
+    else:
+        form = {model_name}Form()
+    
+    return render(request, '{app_name}/{model_lower}_form.html', {{
+        'form': form,
+        'titulo': 'Crear {model_name}',
+        'accion': 'Crear'
+    }})
+
+def {model_lower}_editar(request, id):
+    """Edita un {model_name} existente"""
+    objeto = get_object_or_404({model_name}, id=id)
+    
+    if request.method == 'POST':
+        form = {model_name}Form(request.POST, instance=objeto)
+        if form.is_valid():
+            form.save()
+            messages.success(request, '{model_name} actualizado exitosamente.')
+            return redirect('{app_name}:{model_lower}_detalle', id=objeto.id)
+    else:
+        form = {model_name}Form(instance=objeto)
+    
+    return render(request, '{app_name}/{model_lower}_form.html', {{
+        'form': form,
+        'objeto': objeto,
+        'titulo': f'Editar {{objeto}}',
+        'accion': 'Actualizar'
+    }})
+
+def {model_lower}_eliminar(request, id):
+    """Elimina un {model_name}"""
+    objeto = get_object_or_404({model_name}, id=id)
+    
+    if request.method == 'POST':
+        objeto.delete()
+        messages.success(request, '{model_name} eliminado exitosamente.')
+        return redirect('{app_name}:{model_lower}_lista')
+    
+    return render(request, '{app_name}/{model_lower}_confirmar_eliminar.html', {{
+        'objeto': objeto,
+        'titulo': f'Eliminar {{objeto}}'
+    }})
+'''
             
-            with open(views_path, "w") as f:
+            with open(views_path, "w", encoding='utf-8') as f:
                 f.write(views_content)
             
             print(f"Views CRUD generadas para {model_name} en {app_name}")
@@ -382,24 +403,24 @@ class {app_name.capitalize()}Config(AppConfig):
                 return {"success": False, "error": f"La app {app_name} no existe"}
             
             forms_content = f'''from django import forms
-    from .models import {model_name}
+from .models import {model_name}
 
-    class {model_name}Form(forms.ModelForm):
-        class Meta:
-            model = {model_name}
-            fields = '__all__'
-            widgets = {{
-                # Personaliza widgets aquí si es necesario
-            }}
+class {model_name}Form(forms.ModelForm):
+    class Meta:
+        model = {model_name}
+        fields = '__all__'
+        widgets = {{
+            # Personaliza widgets aqui si es necesario
+        }}
+        
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Agregar clases CSS a todos los campos
+        for field_name, field in self.fields.items():
+            field.widget.attrs.update({{'class': 'form-control'}})
+'''
             
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            # Agregar clases CSS a todos los campos
-            for field_name, field in self.fields.items():
-                field.widget.attrs.update({{'class': 'form-control'}})
-    '''
-            
-            with open(forms_path, "w") as f:
+            with open(forms_path, "w", encoding='utf-8') as f:
                 f.write(forms_content)
             
             print(f"Forms generado para {model_name}")
@@ -421,31 +442,254 @@ class {app_name.capitalize()}Config(AppConfig):
             model_lower = model_name.lower()
             
             urls_content = f'''from django.urls import path
-    from . import views
+from . import views
 
-    app_name = '{app_name}'
+app_name = '{app_name}'
 
-    urlpatterns = [
-        # Lista de {model_name}s
-        path('', views.{model_lower}_lista, name='{model_lower}_lista'),
-        
-        # Detalle de {model_name}
-        path('<int:id>/', views.{model_lower}_detalle, name='{model_lower}_detalle'),
-        
-        # Crear nuevo {model_name}
-        path('crear/', views.{model_lower}_crear, name='{model_lower}_crear'),
-        
-        # Editar {model_name}
-        path('<int:id>/editar/', views.{model_lower}_editar, name='{model_lower}_editar'),
-        
-        # Eliminar {model_name}
-        path('<int:id>/eliminar/', views.{model_lower}_eliminar, name='{model_lower}_eliminar'),
-    ]
-    '''   
-            with open(urls_path, "w") as f:
+urlpatterns = [
+    # Lista de {model_name}s
+    path('', views.{model_lower}_lista, name='{model_lower}_lista'),
+    
+    # Detalle de {model_name}
+    path('<int:id>/', views.{model_lower}_detalle, name='{model_lower}_detalle'),
+    
+    # Crear nuevo {model_name}
+    path('crear/', views.{model_lower}_crear, name='{model_lower}_crear'),
+    
+    # Editar {model_name}
+    path('<int:id>/editar/', views.{model_lower}_editar, name='{model_lower}_editar'),
+    
+    # Eliminar {model_name}
+    path('<int:id>/eliminar/', views.{model_lower}_eliminar, name='{model_lower}_eliminar'),
+]
+'''   
+            with open(urls_path, "w", encoding='utf-8') as f:
                 f.write(urls_content)
             
             print(f"URLs de app generadas para {model_name} en {app_name}")
+            return {"success": True, "error": None}
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def generar_templates_crud(project_path: str, app_name: str, model_name: str) -> dict:
+        try:
+            project_dir = Path(project_path)
+            templates_dir = project_dir / "templates" / app_name
+            templates_dir.mkdir(parents=True, exist_ok=True)
+            
+            model_lower = model_name.lower()
+            
+            # Template lista
+            lista_template = templates_dir / f"{model_lower}_lista.html"
+            lista_content = """{% extends 'base.html' %}
+
+{% block title %}""" + model_name + """s - Mi Proyecto Django{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+                <li class="breadcrumb-item active">""" + model_name + """s</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>""" + model_name + """s</h2>
+            <a href="{% url '""" + app_name + ":" + model_lower + """_crear' %}" class="btn btn-primary">Crear """ + model_name + """</a>
+        </div>
+
+        {% if objetos %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Información</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for objeto in objetos %}
+                        <tr>
+                            <td>{{ objeto.id }}</td>
+                            <td>{{ objeto }}</td>
+                            <td>
+                                <a href="{% url '""" + app_name + ":" + model_lower + """_detalle' objeto.id %}" class="btn btn-sm btn-info">Ver</a>
+                                <a href="{% url '""" + app_name + ":" + model_lower + """_editar' objeto.id %}" class="btn btn-sm btn-warning">Editar</a>
+                                <a href="{% url '""" + app_name + ":" + model_lower + """_eliminar' objeto.id %}" class="btn btn-sm btn-danger">Eliminar</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="alert alert-info">
+                <h4>No hay """ + model_name + """s registrados</h4>
+                <p>Comienza creando tu primer """ + model_name + """.</p>
+                <a href="{% url '""" + app_name + ":" + model_lower + """_crear' %}" class="btn btn-primary">Crear """ + model_name + """</a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+"""
+            
+            with open(lista_template, "w", encoding='utf-8') as f:
+                f.write(lista_content)
+            
+            # Template formulario (crear/editar)
+            form_template = templates_dir / f"{model_lower}_form.html"
+            form_content = """{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} - Mi Proyecto Django{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+                <li class="breadcrumb-item"><a href="{% url '""" + app_name + ":" + model_lower + """_lista' %}">""" + model_name + """s</a></li>
+                <li class="breadcrumb-item active">{{ titulo }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5>{{ titulo }}</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    {% for field in form %}
+                        <div class="mb-3">
+                            <label class="form-label">{{ field.label }}</label>
+                            {{ field }}
+                            {% for error in field.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                    
+                    <div class="d-flex justify-content-end">
+                        <a href="{% url '""" + app_name + ":" + model_lower + """_lista' %}" class="btn btn-secondary me-2">Cancelar</a>
+                        <button type="submit" class="btn btn-primary">{{ accion }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+"""
+            
+            with open(form_template, "w", encoding='utf-8') as f:
+                f.write(form_content)
+            
+            # Template detalle
+            detalle_template = templates_dir / f"{model_lower}_detalle.html"
+            detalle_content = """{% extends 'base.html' %}
+
+{% block title %}{{ objeto }} - Mi Proyecto Django{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+                <li class="breadcrumb-item"><a href="{% url '""" + app_name + ":" + model_lower + """_lista' %}">""" + model_name + """s</a></li>
+                <li class="breadcrumb-item active">{{ objeto }}</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>{{ objeto }}</h2>
+            <div>
+                <a href="{% url '""" + app_name + ":" + model_lower + """_editar' objeto.id %}" class="btn btn-warning">Editar</a>
+                <a href="{% url '""" + app_name + ":" + model_lower + """_eliminar' objeto.id %}" class="btn btn-danger">Eliminar</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5>Detalles del """ + model_name + """</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>ID:</strong> {{ objeto.id }}</p>
+                <!-- Aqui se mostrarian todos los campos del modelo -->
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <a href="{% url '""" + app_name + ":" + model_lower + """_lista' %}" class="btn btn-secondary">Volver</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+"""
+            
+            with open(detalle_template, "w", encoding='utf-8') as f:
+                f.write(detalle_content)
+            
+            # Template confirmar eliminar
+            confirmar_template = templates_dir / f"{model_lower}_confirmar_eliminar.html"
+            confirmar_content = """{% extends 'base.html' %}
+
+{% block title %}Eliminar {{ objeto }} - Mi Proyecto Django{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+                <li class="breadcrumb-item"><a href="{% url '""" + app_name + ":" + model_lower + """_lista' %}">""" + model_name + """s</a></li>
+                <li class="breadcrumb-item active">Eliminar</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <h5>Confirmar eliminacion</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <strong>Estas seguro de eliminar este """ + model_name + """?</strong>
+                </div>
+                <p><strong>{{ objeto }}</strong></p>
+                
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex justify-content-end">
+                        <a href="{% url '""" + app_name + ":" + model_lower + """_detalle' objeto.id %}" class="btn btn-secondary me-2">Cancelar</a>
+                        <button type="submit" class="btn btn-danger">Eliminar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+"""
+            
+            with open(confirmar_template, "w", encoding='utf-8') as f:
+                f.write(confirmar_content)
+            
+            print(f"Templates CRUD generados para {model_name}")
             return {"success": True, "error": None}
             
         except Exception as e:
@@ -501,7 +745,7 @@ class {app_name.capitalize()}Config(AppConfig):
                         "    path('', views.index, name='index'),\n]"
                     )
             
-            with open(main_urls_path, "w") as f:
+            with open(main_urls_path, "w", encoding='utf-8') as f:
                 f.write(content)
             
             print(f"URLs de {app_name} conectadas al proyecto principal")
@@ -546,7 +790,7 @@ class {app_name.capitalize()}Config(AppConfig):
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>"""
-            with open(base_template, "w") as f:
+            with open(base_template, "w", encoding='utf-8') as f:
                 f.write(base_content)
         index_template = templates_dir / "index.html"
         index_content = """{% extends 'base.html' %}
@@ -556,8 +800,8 @@ class {app_name.capitalize()}Config(AppConfig):
 {% block content %}
 <div class="row">
     <div class="col-12">
-        <h1 class="mb-4"> Mi Proyecto Django</h1>
-        <p class="lead">Bienvenido a tu proyecto Django generado automáticamente</p>
+        <h1 class="mb-4">Mi Proyecto Django</h1>
+        <p class="lead">Bienvenido a tu proyecto Django generado automaticamente</p>
     </div>
 </div>
 
@@ -565,7 +809,7 @@ class {app_name.capitalize()}Config(AppConfig):
     <div class="col-md-8">
         <div class="card">
             <div class="card-header">
-                <h5 class="card-title mb-0"> Apps Disponibles</h5>
+                <h5 class="card-title mb-0">Apps Disponibles</h5>
             </div>
             <div class="card-body">
                 <div class="list-group">
@@ -578,7 +822,7 @@ class {app_name.capitalize()}Config(AppConfig):
                         <p class="mb-1">Modelos: {{ app_info.models|join:", " }}</p>
                     </a>
                     {% empty %}
-                    <div class="text-muted">No hay apps disponibles aún</div>
+                    <div class="text-muted">No hay apps disponibles aun</div>
                     {% endfor %}
                 </div>
             </div>
@@ -588,13 +832,13 @@ class {app_name.capitalize()}Config(AppConfig):
     <div class="col-md-4">
         <div class="card">
             <div class="card-header">
-                <h5 class="card-title mb-0">Enlaces Útiles</h5>
+                <h5 class="card-title mb-0">Enlaces Utiles</h5>
             </div>
             <div class="card-body">
                 <ul class="list-unstyled">
-                    <li><a href="/admin/" target="_blank"> Panel de Admin</a></li>
-                    <li><a href="#" onclick="alert('Funcionalidad próximamente')">Estadísticas</a></li>
-                    <li><a href="#" onclick="alert('Funcionalidad próximamente')">Configuración</a></li>
+                    <li><a href="/admin/" target="_blank">Panel de Admin</a></li>
+                    <li><a href="#" onclick="alert('Funcionalidad proximamente')">Estadisticas</a></li>
+                    <li><a href="#" onclick="alert('Funcionalidad proximamente')">Configuracion</a></li>
                 </ul>
             </div>
         </div>
@@ -602,7 +846,7 @@ class {app_name.capitalize()}Config(AppConfig):
 </div>
 {% endblock %}"""
         
-        with open(index_template, "w") as f:
+        with open(index_template, "w", encoding='utf-8') as f:
             f.write(index_content) 
         main_views_path = project_dir / "Mi_proyecto" / "views.py"
         if not main_views_path.exists():
@@ -644,7 +888,7 @@ def index(request):
     })
 """
             
-            with open(main_views_path, "w") as f:
+            with open(main_views_path, "w", encoding='utf-8') as f:
                 f.write(views_content)
         settings_path = project_dir / "Mi_proyecto" / "settings.py"
         if settings_path.exists():
@@ -657,7 +901,7 @@ def index(request):
                     "'DIRS': [BASE_DIR / 'templates']"
                 )
                 
-                with open(settings_path, "w") as f:
+                with open(settings_path, "w", encoding='utf-8') as f:
                     f.write(content)
         
-        print("Página índice creada con templates configurados")
+        print("Pagina indice creada con templates configurados")
