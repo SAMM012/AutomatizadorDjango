@@ -846,7 +846,7 @@ class UI:
                     on_click=self.generar_urls_app_solo,
                     bgcolor=ft.colors.ORANGE_800,
                     color=ft.colors.WHITE
-)
+                )
             ],
             expand=True,
             scroll=True
@@ -973,11 +973,14 @@ class UI:
                 [str(python_exe), str(manage_py), "runserver"],
                 cwd=str(self.state.ruta_proyecto),
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+                stderr=subprocess.STDOUT,  # Redirige stderr a stdout
+                text=True,
+                bufsize=1,  # Buffering de línea
+                universal_newlines=True
             )
 
-            print(f"Servidor iniciado en http://127.0.0.1:8000")
+            print(f"Intentando iniciar servidor en http://127.0.0.1:8000")
+            print("Monitoreando salida del servidor...")
             threading.Thread(target=self.monitorear_servidor, daemon=True).start()
             
             self.btn_iniciar_servidor.disabled = True
@@ -1005,6 +1008,18 @@ class UI:
             output = self.state.proceso_servidor.stdout.readline().strip()
             if output:
                 print(f"[Servidor]: {output}")
+        
+        # Si el proceso terminó, mostrar el código de salida
+        if self.state.proceso_servidor:
+            exit_code = self.state.proceso_servidor.poll()
+            if exit_code != 0:
+                print(f"SERVIDOR TERMINÓ CON ERROR (código: {exit_code})")
+                # Leer cualquier salida restante
+                remaining_output = self.state.proceso_servidor.stdout.read()
+                if remaining_output:
+                    print(f"Salida final: {remaining_output}")
+            else:
+                print("Servidor detenido normalmente")
 
     def _trigger_async_creation(self):
         """Método puente síncrono para iniciar la operación async"""

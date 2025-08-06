@@ -203,7 +203,14 @@ class {app_name.capitalize()}Config(AppConfig):
                 check=True,
                 cwd=str(project_dir)
             )
-            
+            print(f"URLs de app generadas para {nombre_tabla}")
+            print(f"PASO 3: Conectando {app_name} al proyecto principal...")
+            DjangoManager._conectar_urls_proyecto(project_dir, app_name)
+            print(f"URLs conectadas al proyecto principal")
+            print(f"PASO 4: Creando página índice del proyecto...")
+            DjangoManager._crear_pagina_indice(project_dir)
+            print(f" Página índice creada")
+
             return {"success": True, "error": None}
             
         except Exception as e:
@@ -443,3 +450,214 @@ class {app_name.capitalize()}Config(AppConfig):
             
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def _conectar_urls_proyecto(project_dir: Path, app_name: str):
+        main_urls_path = project_dir / "Mi_proyecto" / "urls.py"
+        
+        if not main_urls_path.exists():
+            possible_paths = [
+                project_dir / "urls.py", 
+                project_dir / "config" / "urls.py",  
+            ]
+            
+            for path in possible_paths:
+                if path.exists():
+                    main_urls_path = path
+                    break
+        
+        if main_urls_path.exists():
+            with open(main_urls_path, "r") as f:
+                content = f.read()
+            if "from django.urls import path" in content and "from django.urls import path, include" not in content:
+                content = content.replace(
+                    "from django.urls import path",
+                    "from django.urls import path, include"
+                )
+            if "from . import views" not in content:
+                if "from django.urls import" in content:
+                    lines = content.split('\n')
+                    for i, line in enumerate(lines):
+                        if line.startswith("from django.urls import"):
+                            lines.insert(i + 1, "from . import views")
+                            break
+                    content = '\n'.join(lines)
+            if f"path('{app_name}/', include('apps.{app_name}.urls'))" not in content:
+                if "urlpatterns = [" in content:
+                    if "path('admin/', admin.site.urls)," in content:
+                        content = content.replace(
+                            "path('admin/', admin.site.urls),",
+                            f"path('admin/', admin.site.urls),\n    path('{app_name}/', include('apps.{app_name}.urls')),"
+                        )
+                    else:
+                        content = content.replace(
+                            "urlpatterns = [",
+                            f"urlpatterns = [\n    path('{app_name}/', include('apps.{app_name}.urls')),"
+                        )
+            if "path('', views.index, name='index')" not in content:
+                if "]" in content:
+                    content = content.replace(
+                        "]",
+                        "    path('', views.index, name='index'),\n]"
+                    )
+            
+            with open(main_urls_path, "w") as f:
+                f.write(content)
+            
+            print(f"URLs de {app_name} conectadas al proyecto principal")
+        else:
+            print(f"No se encontró urls.py del proyecto principal")
+
+    @staticmethod
+    def _crear_pagina_indice(project_dir: Path):
+        templates_dir = project_dir / "templates"
+        templates_dir.mkdir(exist_ok=True)
+        base_template = templates_dir / "base.html"
+        if not base_template.exists():
+            base_content = """<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Mi Proyecto Django{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">Mi Proyecto</a>
+        </div>
+    </nav>
+    
+    <div class="container mt-4">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+        
+        {% block content %}
+        {% endblock %}
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>"""
+            with open(base_template, "w") as f:
+                f.write(base_content)
+        index_template = templates_dir / "index.html"
+        index_content = """{% extends 'base.html' %}
+
+{% block title %}Inicio - Mi Proyecto Django{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4"> Mi Proyecto Django</h1>
+        <p class="lead">Bienvenido a tu proyecto Django generado automáticamente</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0"> Apps Disponibles</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    {% for app_info in apps %}
+                    <a href="/{{ app_info.name }}/" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">{{ app_info.name|title }}</h6>
+                            <small>{{ app_info.models|length }} modelo{{ app_info.models|length|pluralize }}</small>
+                        </div>
+                        <p class="mb-1">Modelos: {{ app_info.models|join:", " }}</p>
+                    </a>
+                    {% empty %}
+                    <div class="text-muted">No hay apps disponibles aún</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Enlaces Útiles</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled">
+                    <li><a href="/admin/" target="_blank"> Panel de Admin</a></li>
+                    <li><a href="#" onclick="alert('Funcionalidad próximamente')">Estadísticas</a></li>
+                    <li><a href="#" onclick="alert('Funcionalidad próximamente')">Configuración</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}"""
+        
+        with open(index_template, "w") as f:
+            f.write(index_content) 
+        main_views_path = project_dir / "Mi_proyecto" / "views.py"
+        if not main_views_path.exists():
+            views_content = """from django.shortcuts import render
+import os
+from pathlib import Path
+
+def index(request):
+    \"\"\"Vista principal que muestra todas las apps disponibles\"\"\"
+    apps_info = []
+    
+    # Buscar apps en el directorio apps/
+    apps_dir = Path(__file__).parent.parent / "apps"
+    
+    if apps_dir.exists():
+        for app_folder in apps_dir.iterdir():
+            if app_folder.is_dir() and not app_folder.name.startswith('.'):
+                models_file = app_folder / "models.py"
+                models = []
+                
+                if models_file.exists():
+                    try:
+                        with open(models_file, 'r') as f:
+                            content = f.read()
+                            # Buscar clases que hereden de models.Model
+                            import re
+                            model_matches = re.findall(r'class (\w+)\(models\.Model\):', content)
+                            models = model_matches
+                    except:
+                        pass
+                
+                apps_info.append({
+                    'name': app_folder.name,
+                    'models': models
+                })
+    
+    return render(request, 'index.html', {
+        'apps': apps_info
+    })
+"""
+            
+            with open(main_views_path, "w") as f:
+                f.write(views_content)
+        settings_path = project_dir / "Mi_proyecto" / "settings.py"
+        if settings_path.exists():
+            with open(settings_path, "r") as f:
+                content = f.read()
+            
+            if "'DIRS': []" in content:
+                content = content.replace(
+                    "'DIRS': []",
+                    "'DIRS': [BASE_DIR / 'templates']"
+                )
+                
+                with open(settings_path, "w") as f:
+                    f.write(content)
+        
+        print("Página índice creada con templates configurados")
