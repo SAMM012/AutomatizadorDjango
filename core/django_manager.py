@@ -145,6 +145,10 @@ class {app_name.capitalize()}Config(AppConfig):
             app_dir = project_dir / "apps" / app_name
             if not app_dir.exists():
                 return {"success": False, "error": f"La app {app_name} no existe"}
+            
+            # Campos reservados que no pueden ser usados
+            CAMPOS_RESERVADOS = {'id', 'pk'}
+            
             TIPOS_VALIDOS = {
                 'CharField': 'CharField(max_length=100)',
                 'IntegerField': 'IntegerField()',
@@ -154,6 +158,25 @@ class {app_name.capitalize()}Config(AppConfig):
                 'EmailField': 'EmailField()',
                 'ForeignKey': 'ForeignKey(to="self", on_delete=models.CASCADE)'
             }
+            
+            # Validar campos antes de generar el modelo
+            nombres_usados = set()
+            for campo in campos:
+                nombre_campo = campo['name'].lower()
+                
+                # Validar campos reservados
+                if nombre_campo in CAMPOS_RESERVADOS:
+                    return {"success": False, "error": f"El campo '{campo['name']}' es reservado por Django. Usa otro nombre."}
+                
+                # Validar nombres duplicados (Django convierte a minúsculas)
+                if nombre_campo in nombres_usados:
+                    return {"success": False, "error": f"El campo '{campo['name']}' está duplicado. Cada campo debe tener un nombre único."}
+                nombres_usados.add(nombre_campo)
+                
+                # Validar tipo de campo
+                if campo['type'] not in TIPOS_VALIDOS and campo['type'] != 'Tipo':
+                    return {"success": False, "error": f"Tipo de campo '{campo['type']}' no válido. Tipos disponibles: {', '.join(TIPOS_VALIDOS.keys())}"}
+            
             models_path = app_dir / "models.py"
             contenido = "from django.db import models\n\n"
             if models_path.exists():
@@ -193,16 +216,39 @@ class {app_name.capitalize()}Config(AppConfig):
             venv_python = Path(venv_path) / ("Scripts" if os.name == "nt" else "bin") / "python"
             manage_py = project_dir / "manage.py"
             
-            subprocess.run(
-                [str(venv_python), str(manage_py), "makemigrations", app_name],
-                check=True,
-                cwd=str(project_dir)
-            )
-            subprocess.run(
-                [str(venv_python), str(manage_py), "migrate"],
-                check=True,
-                cwd=str(project_dir)
-            )
+            # Ejecutar makemigrations con manejo de errores
+            print(f"Generando migración para {app_name}...")
+            try:
+                result_makemig = subprocess.run(
+                    [str(venv_python), str(manage_py), "makemigrations", app_name],
+                    check=True,
+                    cwd=str(project_dir),
+                    capture_output=True,
+                    text=True
+                )
+                print("✅ Makemigrations exitoso:")
+                print(result_makemig.stdout)
+            except subprocess.CalledProcessError as e:
+                return {"success": False, "error": f"Error en makemigrations: {e.stderr or e.stdout or str(e)}"}
+            
+            # Ejecutar migrate con manejo de errores
+            print("Aplicando migraciones...")
+            try:
+                result_migrate = subprocess.run(
+                    [str(venv_python), str(manage_py), "migrate"],
+                    check=True,
+                    cwd=str(project_dir),
+                    capture_output=True,
+                    text=True
+                )
+                print("✅ Migrate exitoso:")
+                print(result_migrate.stdout)
+            except subprocess.CalledProcessError as e:
+                error_msg = e.stderr or e.stdout or str(e)
+                if "duplicate column name" in error_msg:
+                    return {"success": False, "error": f"Ya existe un campo con ese nombre en la base de datos. Usa un nombre diferente o elimina las migraciones anteriores."}
+                else:
+                    return {"success": False, "error": f"Error en migrate: {error_msg}"}
             
             # PASO 1: Generar views CRUD
             print(f"PASO 1: Generando views CRUD para {nombre_tabla}...")
