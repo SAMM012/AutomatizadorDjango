@@ -146,7 +146,7 @@ class {app_name.capitalize()}Config(AppConfig):
             if not app_dir.exists():
                 return {"success": False, "error": f"La app {app_name} no existe"}
             
-            # Campos reservados que no pueden ser usados
+            # Campos reservados que no pueden ser usados (Django los crea automáticamente)
             CAMPOS_RESERVADOS = {'id', 'pk'}
             
             TIPOS_VALIDOS = {
@@ -174,7 +174,7 @@ class {app_name.capitalize()}Config(AppConfig):
                 nombres_usados.add(nombre_campo)
                 
                 # Validar tipo de campo
-                if campo['type'] not in TIPOS_VALIDOS and campo['type'] != 'Tipo':
+                if campo['type'] not in TIPOS_VALIDOS:
                     return {"success": False, "error": f"Tipo de campo '{campo['type']}' no válido. Tipos disponibles: {', '.join(TIPOS_VALIDOS.keys())}"}
             
             models_path = app_dir / "models.py"

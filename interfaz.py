@@ -662,14 +662,29 @@ class UI:
             app_name = self.dd_apps.value.replace(" (pendiente)", "")
             
             campos = []
-            for row in self.campos_column.controls[1:]: 
-                if isinstance(row, ft.Row) and len(row.controls) >= 2:
-                    nombre = row.controls[0].value.strip()
-                    tipo = row.controls[1].value
-                    if nombre and tipo:
-                        campos.append({"name": nombre, "type": tipo})
+            print(f"\n=== DEBUG RECOLECCIÓN DE CAMPOS ===")
+            print(f"Total controles en campos_column: {len(self.campos_column.controls)}")
             
+            for i, row in enumerate(self.campos_column.controls[1:], 1): 
+                print(f"Control {i}: {type(row)}")
+                if isinstance(row, ft.Row) and len(row.controls) >= 2:
+                    nombre = row.controls[0].value
+                    tipo = row.controls[1].value
+                    print(f"  Fila {i}: nombre='{nombre}', tipo='{tipo}'")
+                    
+                    # Filtrar campos problemáticos y vacíos
+                    if (nombre and nombre.strip() and tipo and 
+                        tipo != 'Tipo' and  # Filtrar tipo inválido
+                        nombre.strip() != 'Nombre' and  # Filtrar nombre por defecto
+                        tipo in ['CharField', 'IntegerField', 'TextField', 'BooleanField', 'DateTimeField', 'EmailField', 'ForeignKey']):
+                        
+                        campos.append({"name": nombre.strip(), "type": tipo})
+                        print(f"  ✓ Campo agregado: {nombre.strip()} -> {tipo}")
+                    else:
+                        print(f"  ✗ Campo ignorado (vacío, inválido o fantasma): '{nombre}' -> '{tipo}'")
+                        
             print(f"Campos obtenidos: {campos}")
+            print("=====================================\n")
             
             if not campos:
                 print("Añade al menos un campo válido al modelo")
@@ -689,12 +704,49 @@ class UI:
                     self.state.update_wizard_step("modelos", True)
                     self._refresh_wizard_ui()
             else:
-                print(f"Error: {resultado['error']}")      
+                print(f"Error: {resultado['error']}")
+                print("Puedes corregir los campos y volver a intentar.")
+                # Actualizar la UI para permitir correcciones
+                self.page.update()
         except Exception as ex:
             print(f"\n=== ERROR ===\n{str(ex)}\n=============")
             print(f"Error al guardar modelo: {str(ex)}")
+            print("Puedes corregir los campos y volver a intentar.")
+            # Actualizar la UI para permitir correcciones
+            self.page.update()
             import traceback
             traceback.print_exc()
+
+    def limpiar_campos_modelo(self, e=None):
+        """Limpia todos los campos del modelo para empezar de nuevo"""
+        try:
+            # Limpiar el nombre de la tabla
+            self.txt_tabla.value = ""
+            
+            # Limpiar solo los TextFields existentes, más simple y seguro
+            for i, row in enumerate(self.campos_column.controls[2:], 1):  # Saltar dropdown y header
+                if isinstance(row, ft.Row) and len(row.controls) >= 2:
+                    # Limpiar el campo de texto
+                    if hasattr(row.controls[0], 'value'):
+                        row.controls[0].value = ""
+                    
+                    # Resetear dropdown a CharField
+                    if hasattr(row.controls[1], 'value'):
+                        row.controls[1].value = "CharField"
+            
+            # Actualizar la UI
+            self.page.update()
+            
+            print("✅ Campos limpiados. Puedes agregar nuevos valores.")
+        except Exception as ex:
+            print(f"Error al limpiar campos: {ex}")
+            # Método alternativo más simple
+            try:
+                self.txt_tabla.value = ""
+                self.page.update()
+                print("✅ Nombre de tabla limpiado. Edita los campos manualmente.")
+            except:
+                print("❌ Error al limpiar. Edita los campos manualmente.")
 
     def obtener_campos(self) -> list:
         campos = []
@@ -827,6 +879,13 @@ class UI:
                     on_click=self.añadir_campo
                 ),
                 ft.ElevatedButton(
+                    "Limpiar Campos", 
+                    icon=ft.icons.CLEAR_ALL,
+                    on_click=self.limpiar_campos_modelo,
+                    bgcolor=ft.colors.ORANGE_800,
+                    color=ft.colors.WHITE
+                ),
+                ft.ElevatedButton(
                     "Guardar Modelo",
                     icon=ft.icons.SAVE,
                     on_click=self.guardar_modelo,
@@ -855,16 +914,22 @@ class UI:
             controls=[
                 ft.TextField(
                     hint_text=f"campo_{index}",
-                    width=200
+                    width=200,
+                    value="",  # Forzar valor vacío
+                    autofocus=False
                 ),
                 ft.Dropdown(
                     width=150,
                     options=[
                         ft.dropdown.Option("CharField"),
-                        ft.dropdown.Option("IntegerField"),
-                        ft.dropdown.Option("DateTimeField")
+                        ft.dropdown.Option("IntegerField"), 
+                        ft.dropdown.Option("TextField"),
+                        ft.dropdown.Option("BooleanField"),
+                        ft.dropdown.Option("DateTimeField"),
+                        ft.dropdown.Option("EmailField"),
+                        ft.dropdown.Option("ForeignKey")
                     ],
-                    value="CharField"
+                    value="CharField"  # Valor por defecto seguro
                 )
             ],
             spacing=20
