@@ -1068,10 +1068,10 @@ class UI:
             nueva_fila = self._crear_fila_campo(new_index + 1) 
             
             self.campos_column.controls.append(nueva_fila)
-            self.campos_column.update()  
+            self.page.update()  # Usar page.update() en lugar de campos_column.update()
             print(f"Campo {new_index + 1} añadido correctamente")
         except Exception as ex:
-            print(f"Error: {ex}")
+            print(f"Error al añadir campo: {ex}")
 
     def _crear_fila_campo(self, index):
         print(f"\nCreando fila {index}...")  
