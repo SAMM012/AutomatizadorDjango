@@ -34,16 +34,24 @@ class UI:
         self.db_config = DatabaseConfig()
         self.django_manager = DjangoManager()
         
-        # Contenedor de error flotante (overlay)
+        # Contenedor de error centrado
         self.error_overlay = ft.Container(
             content=ft.Row([
                 ft.Icon(ft.Icons.WARNING, color=ft.Colors.WHITE),
-                ft.Text("", color=ft.Colors.WHITE, expand=True),
+                ft.Container(  # Contenedor para centrar el texto un poco más
+                    content=ft.Text("", 
+                                  color=ft.Colors.WHITE, 
+                                  size=15,  # Un punto más grande
+                                  text_align=ft.TextAlign.CENTER),
+                    expand=True,
+                    alignment=ft.alignment.center_left,
+                    margin=ft.margin.only(left=20)  # 20% más centrado
+                ),
                 ft.IconButton(
                     icon=ft.Icons.CLEANING_SERVICES,
                     tooltip="Limpiar campos", 
                     icon_color=ft.Colors.WHITE,
-                    on_click=self.limpiar_campos_modelo
+                    on_click=self.limpiar_y_cerrar
                 ),
                 ft.IconButton(
                     icon=ft.Icons.CLOSE,
@@ -53,13 +61,14 @@ class UI:
                 )
             ]),
             bgcolor=ft.Colors.RED_400,
-            padding=10,
-            border_radius=5,
-            width=600,  # Ancho fijo
+            padding=15,
+            border_radius=8,
+            width=750,  # 50% más largo (500 + 250 = 750)
+            alignment=ft.alignment.center,  # Centrar contenido
             shadow=ft.BoxShadow(
-                spread_radius=1,
-                blur_radius=10,
-                color=ft.Colors.BLACK26,
+                spread_radius=2,
+                blur_radius=15,
+                color=ft.Colors.BLACK38,
             ),
             visible=False
         )
@@ -106,18 +115,18 @@ class UI:
 
         self.btn_iniciar_servidor = ft.ElevatedButton(
             "Iniciar Servidor",
-            icon=ft.icons.PLAY_ARROW,
+            icon=ft.Icons.PLAY_ARROW,
             on_click=self.iniciar_servidor,
-            bgcolor=ft.colors.GREEN_800,
-            color=ft.colors.WHITE
+            bgcolor=ft.Colors.GREEN_800,
+            color=ft.Colors.WHITE
         )
 
         self.btn_detener_servidor = ft.ElevatedButton(
             "Detener Servidor",
-            icon=ft.icons.STOP,
+            icon=ft.Icons.STOP,
             on_click=self.detener_servidor,
-            bgcolor=ft.colors.RED_800,
-            color=ft.colors.WHITE,
+            bgcolor=ft.Colors.RED_800,
+            color=ft.Colors.WHITE,
             disabled=True
         )
 
@@ -127,9 +136,9 @@ class UI:
 
         self.btn_crear_su = ft.ElevatedButton(
             "Crear Superusuario",
-            icon=ft.icons.PERSON_ADD,
+            icon=ft.Icons.PERSON_ADD,
             on_click=lambda e: self._trigger_async_creation(),
-            bgcolor=ft.colors.BLUE_800,
+            bgcolor=ft.Colors.BLUE_800,
             color="white"
         )
 
@@ -172,7 +181,7 @@ class UI:
                                         self.txt_folder_name,
                                         ft.ElevatedButton(
                                             "Seleccionar ubicaciion",
-                                            icon=ft.icons.FOLDER_OPEN,
+                                            icon=ft.Icons.FOLDER_OPEN,
                                             on_click= self.select_folder
                                         ),
                                         ft.Row([
@@ -257,7 +266,7 @@ class UI:
                                     on_click=self.crear_entorno_handler,
                                     style=ft.ButtonStyle(
                                         shape=ft.RoundedRectangleBorder(radius=2),
-                                        overlay_color=ft.colors.with_opacity(0.1, "white")
+                                        overlay_color=ft.Colors.with_opacity(0.1, "white")
                                     )
                                 )
                             )
@@ -325,7 +334,7 @@ class UI:
                                     on_click=self.save_db_config,
                                     style=ft.ButtonStyle(
                                         shape=ft.RoundedRectangleBorder(radius=2),
-                                        overlay_color=ft.colors.with_opacity(0.1, "white")
+                                        overlay_color=ft.Colors.with_opacity(0.1, "white")
                                     )
                                 )
                             )
@@ -368,14 +377,14 @@ class UI:
                             self.txt_nombre_app,
                             ft.ElevatedButton(
                                 "Añadir App",
-                                icon=ft.icons.ADD,
+                                icon=ft.Icons.ADD,
                                 on_click=self.añadir_app
                             ),
                             ft.Text("Apps a crear:", weight="bold"),
                             self.lista_apps,
                             ft.ElevatedButton(
                                 "Generar Apps",
-                                icon=ft.icons.CHECK,
+                                icon=ft.Icons.CHECK,
                                 on_click=self.generar_apps,
                                 bgcolor="#4CAF50",
                                 color="white"
@@ -413,7 +422,7 @@ class UI:
                         ],
                         spacing=15
                     ),
-                    ft.Divider(height=30, color=ft.colors.TRANSPARENT),
+                    ft.Divider(height=30, color=ft.Colors.TRANSPARENT),
                     ft.Container(
                         content=ft.Row(
                             controls=[
@@ -466,17 +475,18 @@ class UI:
                 expand=True
             )
         
-        # Stack para overlay flotante
-        self.contenedores = ft.Stack(
+        # Contenedores con overlay centrado
+        self.contenedores = ft.Column(
             controls=[
-                self.contenido_principal,  # Contenido base
-                ft.Positioned(
-                    top=10,
-                    left=10,
-                    right=10,
-                    child=self.error_overlay  # Overlay flotante
-                )
-            ]
+                ft.Container(  # Contenedor para centrar el error
+                    content=self.error_overlay,
+                    alignment=ft.alignment.center,
+                    padding=ft.padding.symmetric(horizontal=20, vertical=10)
+                ),
+                self.contenido_principal  # Contenido principal
+            ],
+            spacing=0,
+            expand=True
         )
 
     def _create_disabled_overlay(self):
@@ -484,12 +494,12 @@ class UI:
             expand=True,
             width=float('inf'),  
             height=float('inf'), 
-            bgcolor=ft.colors.with_opacity(0.6, "grey"),  
+            bgcolor=ft.Colors.with_opacity(0.6, "grey"),  
             border_radius=10,
             alignment=ft.alignment.center,
             content=ft.Column(
                 controls=[
-                    ft.Icon(ft.icons.LOCK, size=50, color="white"),
+                    ft.Icon(ft.Icons.LOCK, size=50, color="white"),
                     ft.Text(
                         "Completa el paso anterior",
                         color="white",
@@ -507,21 +517,21 @@ class UI:
 
     def _create_step_indicator(self, step_number: int, title: str, is_completed: bool, is_current: bool):
         if is_completed:
-            icon = ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN, size=20)
-            title_color = ft.colors.GREEN
+            icon = ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN, size=20)
+            title_color = ft.Colors.GREEN
         elif is_current:
-            icon = ft.Icon(ft.icons.RADIO_BUTTON_UNCHECKED, color=ft.colors.BLUE, size=20)
-            title_color = ft.colors.BLUE
+            icon = ft.Icon(ft.Icons.RADIO_BUTTON_UNCHECKED, color=ft.Colors.BLUE, size=20)
+            title_color = ft.Colors.BLUE
         else:
-            icon = ft.Icon(ft.icons.LOCK, color=ft.colors.GREY_400, size=20)
-            title_color = ft.colors.GREY_400
+            icon = ft.Icon(ft.Icons.LOCK, color=ft.Colors.GREY_400, size=20)
+            title_color = ft.Colors.GREY_400
         
         return ft.Row(
             controls=[
                 ft.Container(
                     width=30,
                     height=30,
-                    bgcolor=ft.colors.with_opacity(0.1, title_color),
+                    bgcolor=ft.Colors.with_opacity(0.1, title_color),
                     border_radius=15,
                     alignment=ft.alignment.center,
                     content=ft.Text(str(step_number), color=title_color, weight=ft.FontWeight.BOLD)
@@ -572,12 +582,12 @@ class UI:
                             top=0,
                             right=0,
                             bottom=0,
-                            bgcolor=ft.colors.with_opacity(0.85, "grey"),
+                            bgcolor=ft.Colors.with_opacity(0.85, "grey"),
                             border_radius=10,
                             alignment=ft.alignment.center,
                             content=ft.Column(
                                 controls=[
-                                    ft.Icon(ft.icons.LOCK, size=50, color="white"),
+                                    ft.Icon(ft.Icons.LOCK, size=50, color="white"),
                                     ft.Text(
                                         "Completa el paso anterior",
                                         color="white",
@@ -799,8 +809,8 @@ class UI:
     def mostrar_error_snackbar(self, mensaje_error):
         """Muestra un overlay flotante de error con opción de limpiar campos"""
         try:
-            # Actualizar el texto del error
-            self.error_overlay.content.controls[1].value = mensaje_error
+            # Actualizar el texto del error (ahora está dentro de un Container)
+            self.error_overlay.content.controls[1].content.value = mensaje_error
             self.error_overlay.visible = True
             self.page.update()
             print(f"✅ Overlay de error mostrado: {mensaje_error}")
@@ -815,6 +825,17 @@ class UI:
             self.page.update()
         except Exception as ex:
             print(f"Error al cerrar overlay de error: {ex}")
+    
+    def limpiar_y_cerrar(self, e=None):
+        """Limpia los campos del modelo Y cierra el overlay de error"""
+        try:
+            # Primero limpiar campos
+            self.limpiar_campos_modelo(e)
+            # Después cerrar el overlay
+            self.cerrar_error()
+            print("✅ Campos limpiados y overlay cerrado")
+        except Exception as ex:
+            print(f"Error al limpiar y cerrar: {ex}")
 
     def crear_dialogo_error(self, mensaje_error):
         """Crea un diálogo modal con información del error y opción de limpiar campos"""
@@ -972,14 +993,14 @@ class UI:
                 selected_path = os.path.normpath(selected_path)
                 self.state.ruta_base = selected_path
                 self.lbl_path.value = selected_path
-                self.lbl_path.color = ft.colors.BLACK
+                self.lbl_path.color = ft.Colors.BLACK
                 self.page.update()
                 
         except Exception as e:
             print(f"Error al seleccionar carpeta: {e}")
             self.page.snack_bar = ft.SnackBar(
                 ft.Text(f"Error: {str(e)}"),
-                bgcolor=ft.colors.RED
+                bgcolor=ft.Colors.RED
             )
             self.page.snack_bar.open = True
             self.page.update()
@@ -992,7 +1013,7 @@ class UI:
         if success:
             self.state.ruta_base = os.path.normpath(full_path)
             self.lbl_path.value = full_path
-            self.lbl_path.color = ft.colors.BLACK
+            self.lbl_path.color = ft.Colors.BLACK
 
             self.state.update_wizard_step("carpeta", True)
             self._refresh_wizard_ui()
@@ -1026,15 +1047,15 @@ class UI:
                 container_campos, 
                 ft.ElevatedButton(
                     "Añadir campo",
-                    icon=ft.icons.ADD,
+                    icon=ft.Icons.ADD,
                     on_click=self.añadir_campo
                 ),
                 ft.ElevatedButton(
                     "Guardar Modelo",
-                    icon=ft.icons.SAVE,
+                    icon=ft.Icons.SAVE,
                     on_click=self.guardar_modelo,
-                    bgcolor=ft.colors.GREEN_800,
-                    color=ft.colors.WHITE
+                    bgcolor=ft.Colors.GREEN_800,
+                    color=ft.Colors.WHITE
                 )
             ],
             expand=True,
@@ -1085,14 +1106,14 @@ class UI:
             self.dd_apps.options.append(
                 ft.dropdown.Option(
                     text=app,
-                    style=ft.ButtonStyle(color=ft.colors.GREEN)
+                    style=ft.ButtonStyle(color=ft.Colors.GREEN)
                 )
             )
         for app in self.state.apps_a_crear:
             self.dd_apps.options.append(
                 ft.dropdown.Option(
                     text=f"{app} (pendiente)",
-                    style=ft.ButtonStyle(color=ft.colors.ORANGE)
+                    style=ft.ButtonStyle(color=ft.Colors.ORANGE)
                 )
             )
         self.page.update()
@@ -1331,7 +1352,7 @@ class UI:
             print("Superusuario creado exitosamente!")
             self.page.snack_bar = ft.SnackBar(
                 ft.Text(f"Superusuario {username} creado"),
-                bgcolor=ft.colors.GREEN
+                bgcolor=ft.Colors.GREEN
             )
             
         except subprocess.CalledProcessError as e:
@@ -1345,22 +1366,22 @@ class UI:
                     
                     self.page.snack_bar = ft.SnackBar(
                         ft.Text(f"Contraseña actualizada para {username}"),
-                        bgcolor=ft.colors.ORANGE
+                        bgcolor=ft.Colors.ORANGE
                     )
                 except Exception:
                     self.page.snack_bar = ft.SnackBar(
                         ft.Text("Error: Usuario ya existe y no se pudo actualizar"),
-                        bgcolor=ft.colors.RED
+                        bgcolor=ft.Colors.RED
                     )
             else:
                 self.page.snack_bar = ft.SnackBar(
                     ft.Text(f"Error: {e.stderr}"),
-                    bgcolor=ft.colors.RED
+                    bgcolor=ft.Colors.RED
                 )
         except Exception as e:
             self.page.snack_bar = ft.SnackBar(
                 ft.Text(f"Error: {str(e)}"),
-                bgcolor=ft.colors.RED
+                bgcolor=ft.Colors.RED
             )
         finally:
             self.page.snack_bar.open = True
