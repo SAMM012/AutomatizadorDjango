@@ -33,6 +33,36 @@ class UI:
         self.logic = FolderCreatorLogic(page)
         self.db_config = DatabaseConfig()
         self.django_manager = DjangoManager()
+        
+        # Contenedor de error flotante (overlay)
+        self.error_overlay = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.WARNING, color=ft.Colors.WHITE),
+                ft.Text("", color=ft.Colors.WHITE, expand=True),
+                ft.IconButton(
+                    icon=ft.Icons.CLEANING_SERVICES,
+                    tooltip="Limpiar campos", 
+                    icon_color=ft.Colors.WHITE,
+                    on_click=self.limpiar_campos_modelo
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE,
+                    tooltip="Cerrar",
+                    icon_color=ft.Colors.WHITE,
+                    on_click=self.cerrar_error
+                )
+            ]),
+            bgcolor=ft.Colors.RED_400,
+            padding=10,
+            border_radius=5,
+            width=600,  # Ancho fijo
+            shadow=ft.BoxShadow(
+                spread_radius=1,
+                blur_radius=10,
+                color=ft.Colors.BLACK26,
+            ),
+            visible=False
+        )
 
         self.txt_folder_name =ft.TextField(
             label="Ej: Mi proyecto",
@@ -414,7 +444,8 @@ class UI:
             
         )
 
-        self.contenedores = ft.Column(
+        # Contenido principal sin overlay
+        self.contenido_principal = ft.Column(
                 controls=[
                     ft.ResponsiveRow(
                         controls=[
@@ -434,6 +465,19 @@ class UI:
                 scroll=ft.ScrollMode.AUTO,
                 expand=True
             )
+        
+        # Stack para overlay flotante
+        self.contenedores = ft.Stack(
+            controls=[
+                self.contenido_principal,  # Contenido base
+                ft.Positioned(
+                    top=10,
+                    left=10,
+                    right=10,
+                    child=self.error_overlay  # Overlay flotante
+                )
+            ]
+        )
 
     def _create_disabled_overlay(self):
         return ft.Container(
@@ -568,7 +612,8 @@ class UI:
         self._refresh_wizard_ui()
 
     def _refresh_wizard_ui(self):
-        self.contenedores.controls = [
+        # Actualizar solo el contenido principal, no el overlay
+        self.contenido_principal.controls = [
             ft.ResponsiveRow(
                 controls=[
                     self._wrap_container_with_wizard(self.contenedor1, "carpeta", 1, "Crear carpeta del proyecto"),
@@ -652,11 +697,15 @@ class UI:
         try:
             nombre_tabla = self.txt_tabla.value.strip()
             if not nombre_tabla:
+                error_msg = "⚠️ Debes ingresar un nombre para la tabla/modelo."
                 print("Ingresa un nombre para la tabla")
+                self.mostrar_error_snackbar(error_msg)
                 return
                 
             if not self.dd_apps.value:
+                error_msg = "⚠️ Debes seleccionar una app antes de crear el modelo."
                 print("Selecciona una app primero")
+                self.mostrar_error_snackbar(error_msg)
                 return
                 
             app_name = self.dd_apps.value.replace(" (pendiente)", "")
@@ -687,7 +736,9 @@ class UI:
             print("=====================================\n")
             
             if not campos:
+                error_msg = "⚠️ No se encontraron campos válidos. Asegúrate de llenar al menos un campo con nombre y tipo válidos."
                 print("Añade al menos un campo válido al modelo")
+                self.mostrar_error_snackbar(error_msg)
                 return
             venv_path = str(Path(self.state.ruta_base) / "venv")
             resultado = DjangoManager.crear_modelo(
@@ -705,15 +756,12 @@ class UI:
                     self._refresh_wizard_ui()
             else:
                 print(f"Error: {resultado['error']}")
-                print("Puedes corregir los campos y volver a intentar.")
-                # Actualizar la UI para permitir correcciones
-                self.page.update()
+                self.mostrar_error_snackbar(f"❌ {resultado['error']}")
+                
         except Exception as ex:
-            print(f"\n=== ERROR ===\n{str(ex)}\n=============")
-            print(f"Error al guardar modelo: {str(ex)}")
-            print("Puedes corregir los campos y volver a intentar.")
-            # Actualizar la UI para permitir correcciones
-            self.page.update()
+            error_msg = f"Error inesperado: {str(ex)}"
+            print(f"\n=== ERROR ===\n{error_msg}\n=============")
+            self.mostrar_error_snackbar(f"❌ {error_msg}")
             import traceback
             traceback.print_exc()
 
@@ -747,6 +795,109 @@ class UI:
                 print("✅ Nombre de tabla limpiado. Edita los campos manualmente.")
             except:
                 print("❌ Error al limpiar. Edita los campos manualmente.")
+
+    def mostrar_error_snackbar(self, mensaje_error):
+        """Muestra un overlay flotante de error con opción de limpiar campos"""
+        try:
+            # Actualizar el texto del error
+            self.error_overlay.content.controls[1].value = mensaje_error
+            self.error_overlay.visible = True
+            self.page.update()
+            print(f"✅ Overlay de error mostrado: {mensaje_error}")
+            
+        except Exception as ex:
+            print(f"Error al mostrar overlay de error: {ex}")
+            
+    def cerrar_error(self, e=None):
+        """Cierra el overlay de error"""
+        try:
+            self.error_overlay.visible = False
+            self.page.update()
+        except Exception as ex:
+            print(f"Error al cerrar overlay de error: {ex}")
+
+    def crear_dialogo_error(self, mensaje_error):
+        """Crea un diálogo modal con información del error y opción de limpiar campos"""
+        
+        def cerrar_dialogo(e):
+            self.dialogo_error.open = False
+            self.page.update()
+        
+        def limpiar_y_cerrar(e):
+            # Ejecutar limpieza de campos
+            self.limpiar_campos_modelo()
+            # Cerrar diálogo
+            self.dialogo_error.open = False
+            self.page.update()
+        
+        # Crear contenido del diálogo
+        contenido = ft.Column([
+            ft.Text("❌ Error en el Modelo", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.RED),
+            
+            ft.Divider(),
+            
+            ft.Text(
+                "Se encontró un problema con los campos:",
+                size=14,
+                weight=ft.FontWeight.BOLD
+            ),
+            
+            ft.Container(
+                content=ft.Text(
+                    mensaje_error,
+                    size=12,
+                    color=ft.Colors.RED_700
+                ),
+                bgcolor=ft.Colors.RED_50,
+                padding=10,
+                border_radius=5,
+                border=ft.border.all(1, ft.Colors.RED_200)
+            ),
+            
+            ft.Text(
+                "💡 Sugerencias:",
+                size=14,
+                weight=ft.FontWeight.BOLD,
+                color=ft.Colors.BLUE_700
+            ),
+            
+            ft.Column([
+                ft.Text("• Corrige manualmente los campos problemáticos", size=12),
+                ft.Text("• O usa 'Limpiar Campos' para empezar de nuevo", size=12),
+                ft.Text("• Evita nombres reservados como 'id' o 'pk'", size=12),
+                ft.Text("• Asegúrate de que no haya campos duplicados", size=12),
+            ], spacing=5),
+            
+            ft.Divider(),
+            
+            ft.Row([
+                ft.ElevatedButton(
+                    "✏️ Corregir Manualmente",
+                    on_click=cerrar_dialogo,
+                    bgcolor=ft.Colors.BLUE_600,
+                    color=ft.Colors.WHITE
+                ),
+                ft.ElevatedButton(
+                    "🧹 Limpiar Campos",
+                    on_click=limpiar_y_cerrar,
+                    bgcolor=ft.Colors.ORANGE_600,
+                    color=ft.Colors.WHITE
+                ),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+        ], spacing=15)
+        
+        # Crear el diálogo
+        self.dialogo_error = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("🚨 Error de Validación"),
+            content=contenido,
+            actions=[
+                ft.TextButton("Corregir", on_click=cerrar_dialogo),
+                ft.TextButton("Limpiar", on_click=limpiar_y_cerrar)
+            ]
+        )
+        
+        return self.dialogo_error
 
     def obtener_campos(self) -> list:
         campos = []
@@ -877,13 +1028,6 @@ class UI:
                     "Añadir campo",
                     icon=ft.icons.ADD,
                     on_click=self.añadir_campo
-                ),
-                ft.ElevatedButton(
-                    "Limpiar Campos", 
-                    icon=ft.icons.CLEAR_ALL,
-                    on_click=self.limpiar_campos_modelo,
-                    bgcolor=ft.colors.ORANGE_800,
-                    color=ft.colors.WHITE
                 ),
                 ft.ElevatedButton(
                     "Guardar Modelo",
