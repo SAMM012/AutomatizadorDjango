@@ -775,6 +775,22 @@ class UI:
             import traceback
             traceback.print_exc()
 
+    def continuar_sin_modelo(self, e):
+        """Permite continuar al paso siguiente sin crear un modelo"""
+        try:
+            if not self.state.wizard_states["apps"]:
+                print("Primero debes crear al menos una app Django")
+                return
+                
+            # Marcar el paso de modelos como completado
+            if not self.state.wizard_states["modelos"]:
+                self.state.update_wizard_step("modelos", True)
+                self._refresh_wizard_ui()
+                print("Paso de modelos omitido. Puedes continuar al paso del servidor.")
+                
+        except Exception as ex:
+            print(f"Error al continuar sin modelo: {str(ex)}")
+
     def limpiar_campos_modelo(self, e=None):
         """Limpia todos los campos del modelo para empezar de nuevo"""
         try:
@@ -1050,12 +1066,25 @@ class UI:
                     icon=ft.Icons.ADD,
                     on_click=self.añadir_campo
                 ),
-                ft.ElevatedButton(
-                    "Guardar Modelo",
-                    icon=ft.Icons.SAVE,
-                    on_click=self.guardar_modelo,
-                    bgcolor=ft.Colors.GREEN_800,
-                    color=ft.Colors.WHITE
+                ft.Row(
+                    controls=[
+                        ft.ElevatedButton(
+                            "Guardar Modelo",
+                            icon=ft.Icons.SAVE,
+                            on_click=self.guardar_modelo,
+                            bgcolor=ft.Colors.GREEN_800,
+                            color=ft.Colors.WHITE
+                        ),
+                        ft.ElevatedButton(
+                            "Continuar sin Modelo",
+                            icon=ft.Icons.SKIP_NEXT,
+                            on_click=self.continuar_sin_modelo,
+                            bgcolor=ft.Colors.ORANGE_800,
+                            color=ft.Colors.WHITE
+                        )
+                    ],
+                    spacing=10,
+                    alignment=ft.MainAxisAlignment.CENTER
                 )
             ],
             expand=True,
