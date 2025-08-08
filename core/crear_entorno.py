@@ -1,15 +1,23 @@
 
 import subprocess
+import asyncio
 from pathlib import Path
 import sys
 import os
 
-def crear_entorno_virtual(nombre: str, ruta_base: str, nombre_proyecto: str) -> str:
+async def crear_entorno_virtual(nombre: str, ruta_base: str, nombre_proyecto: str) -> str:
     try:
         ruta_completa = Path(ruta_base) / nombre
         
         # 1. Crear entorno virtual
-        subprocess.run([sys.executable, "-m", "venv", str(ruta_completa)], check=True)
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "venv", str(ruta_completa),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.communicate()
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, "venv creation")
 
         # 2. Instalar Django - Detectar sistema operativo
         if os.name == "nt":  # Windows
@@ -19,15 +27,26 @@ def crear_entorno_virtual(nombre: str, ruta_base: str, nombre_proyecto: str) -> 
             pip_path = str(ruta_completa / "bin" / "pip")
             django_admin = str(ruta_completa / "bin" / "python")
             
-        subprocess.run([pip_path, "install", "django"], check=True)
+        proc = await asyncio.create_subprocess_exec(
+            pip_path, "install", "django",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await proc.communicate()
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, "django installation")
         
         # 3. Crear proyecto Django usando python -m django (más compatible)
         # Django creará automáticamente la carpeta del proyecto
-        subprocess.run(
-            [django_admin, "-m", "django", "startproject", nombre_proyecto],
-            check=True,
-            cwd=ruta_base
+        proc = await asyncio.create_subprocess_exec(
+            django_admin, "-m", "django", "startproject", nombre_proyecto,
+            cwd=ruta_base,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
+        await proc.communicate()
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, "django project creation")
         
         return f"Entorno '{nombre}' y proyecto '{nombre_proyecto}' creados correctamente"
     except subprocess.CalledProcessError as e:

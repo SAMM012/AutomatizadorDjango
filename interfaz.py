@@ -158,12 +158,19 @@ class UI:
             content=ft.Text("ACEPTAR", color="white"),
             bgcolor="#4CAF50",
             height=40,
-            on_click=self.crear_entorno_handler,
+            on_click=lambda e: self.page.run_task(self.crear_entorno_handler, e),
             style=ft.ButtonStyle(
                 shape=ft.RoundedRectangleBorder(radius=2),
                 overlay_color=ft.Colors.with_opacity(0.1, "white"),
                 side=ft.BorderSide(1, ft.Colors.BLACK)
             )
+        )
+
+        self.lbl_estado_entorno = ft.Text(
+            "",
+            style=ft.TextThemeStyle.BODY_SMALL,
+            color=ft.Colors.BLACK,
+            visible=False
         )
 
         self.panel_tablas = self._crear_panel_tablas()
@@ -267,31 +274,45 @@ class UI:
                         )
                     ),
                     ft.Divider(height=1, color="black"),
-                    ft.Row(
+                    ft.Column(
                         expand=True,
                         controls=[
-                            ft.Container(
+                            ft.Row(
                                 expand=True,
-                                height=180,
-                                content=ft.Column(
-                                    controls=[
-                                        ft.Text("Ingresa el nombre de tu entorno virtual", weight=ft.FontWeight.BOLD),
-                                        self.txt_entorno,
-                                        ft.Text("Ingresa el nombre del proyecto Django", weight=ft.FontWeight.BOLD),
-                                        self.txt_nombre_proyecto
-                                    ],
-                                    spacing=5
-                                ),
-                                padding=8
-                            ),
-                            ft.Container(
-                                width=100,
-                                alignment=ft.alignment.center,
-                                content=self.btn_aceptar_entorno
+                                controls=[
+                                    ft.Container(
+                                        expand=True,
+                                        height=180,
+                                        content=ft.Column(
+                                            controls=[
+                                                ft.Text("Ingresa el nombre de tu entorno virtual", weight=ft.FontWeight.BOLD),
+                                                self.txt_entorno,
+                                                ft.Text("Ingresa el nombre del proyecto Django", weight=ft.FontWeight.BOLD),
+                                                self.txt_nombre_proyecto
+                                            ],
+                                            spacing=5
+                                        ),
+                                        padding=8
+                                    ),
+                                    ft.Container(
+                                        width=100,
+                                        content=ft.Column(
+                                            controls=[
+                                                self.btn_aceptar_entorno,
+                                                ft.Container(
+                                                    content=self.lbl_estado_entorno,
+                                                    padding=ft.padding.only(top=10),
+                                                    alignment=ft.alignment.center
+                                                )
+                                            ],
+                                            horizontal_alignment=ft.CrossAxisAlignment.CENTER
+                                        )
+                                    )
+                                ],
+                                spacing=20,
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
                             )
-                        ],
-                        spacing=20,
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+                        ]
                     )
                 ]
             )
@@ -669,36 +690,72 @@ class UI:
     
     async def crear_entorno_handler(self, e):
         if not self.state.wizard_states["carpeta"]:
-            print("Primero debes crear la carpeta del proyecto")
+            self.mostrar_error_entorno("⚠️ Primero debes crear la carpeta del proyecto")
             return
 
         nombre_entorno = self.txt_entorno.value.strip()
         nombre_proyecto = self.txt_nombre_proyecto.value.strip()
         
         if not nombre_entorno or not nombre_proyecto:
-            print("Ingresa nombres para entorno y proyecto")
+            self.mostrar_error_entorno("⚠️ Ingresa nombres para el entorno virtual y el proyecto Django")
             return
             
         try:
+            # Cambiar botón a estado de carga
+            self.btn_aceptar_entorno.disabled = True
+            self.btn_aceptar_entorno.bgcolor = ft.Colors.BLUE_800
+            self.btn_aceptar_entorno.content = ft.Text("INSTALANDO...", color="white", size=12)
+            
+            # Mostrar primer mensaje
+            self.lbl_estado_entorno.value = "Creando entorno virtual..."
+            self.lbl_estado_entorno.visible = True
+            self.page.update()
+            
             self.state.nombre_proyecto = nombre_proyecto
-            resultado = crear_entorno_virtual(
+            
+            # Cambiar mensaje durante la instalación
+            self.lbl_estado_entorno.value = "Descargando Django..."
+            self.page.update()
+            
+            resultado = await crear_entorno_virtual(
                 nombre_entorno,
                 self.state.ruta_base,
                 nombre_proyecto
             )
+            
+            # Mensaje final de configuración
+            self.lbl_estado_entorno.value = "Configurando proyecto..."
+            self.page.update()
+            
             print(resultado)
             self.state.ruta_proyecto = str(Path(self.state.ruta_base) / nombre_proyecto)
             self.state.update_wizard_step("entorno", True)
             
-            # Deshabilitar el botón después del éxito
-            self.btn_aceptar_entorno.disabled = True
+            # Estado final: botón completado y ocultar texto
             self.btn_aceptar_entorno.bgcolor = ft.Colors.GREY_600
             self.btn_aceptar_entorno.content = ft.Text("COMPLETADO", color="white", size=12)
+            self.lbl_estado_entorno.visible = False
             
             self._refresh_wizard_ui()
             
         except Exception as ex:
-            print(f" Error: {str(ex)}")
+            # En caso de error, restaurar estado original
+            self.btn_aceptar_entorno.disabled = False
+            self.btn_aceptar_entorno.bgcolor = "#4CAF50"
+            self.btn_aceptar_entorno.content = ft.Text("ACEPTAR", color="white")
+            self.lbl_estado_entorno.visible = False
+            self.page.update()
+            
+            # Mostrar error específico según el tipo
+            error_msg = str(ex)
+            if "conflicts with the name" in error_msg:
+                self.mostrar_error_entorno(f"❌ El nombre '{nombre_proyecto}' está reservado por Django. Usa nombres como: sitio_web, mi_app, proyecto_django")
+            elif "Permission denied" in error_msg or "Access is denied" in error_msg:
+                self.mostrar_error_entorno("❌ Sin permisos para crear archivos en esta ubicación. Elige otra carpeta.")
+            elif "No space left on device" in error_msg:
+                self.mostrar_error_entorno("❌ Sin espacio en disco. Libera espacio o elige otra ubicación.")
+            else:
+                self.mostrar_error_entorno(f"❌ Error durante la instalación: {error_msg}")
 
     def update_db_choice(self, e):
         self.state.database_choice = e.control.value
@@ -884,6 +941,18 @@ class UI:
             print("✅ Campos limpiados y overlay cerrado")
         except Exception as ex:
             print(f"Error al limpiar y cerrar: {ex}")
+
+    def mostrar_error_entorno(self, mensaje_error):
+        """Muestra un overlay de error específico para el contenedor 2 (entorno virtual)"""
+        try:
+            # Actualizar el texto del error (reutilizar el overlay existente)
+            self.error_overlay.content.controls[1].content.value = mensaje_error
+            self.error_overlay.visible = True
+            self.page.update()
+            print(f"✅ Error de entorno mostrado: {mensaje_error}")
+            
+        except Exception as ex:
+            print(f"Error al mostrar error de entorno: {ex}")
 
     def crear_dialogo_error(self, mensaje_error):
         """Crea un diálogo modal con información del error y opción de limpiar campos"""
