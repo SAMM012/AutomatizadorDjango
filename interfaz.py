@@ -507,6 +507,78 @@ class UI:
             
         )
 
+        self.contenedor7 = ft.Container(
+            col=4,
+            expand=True,
+            bgcolor=self.color_teal,
+            border_radius=10,
+            padding=10,
+            content=ft.Column(
+                controls=[
+                    ft.Container(
+                        expand=True,
+                        alignment=ft.alignment.center,
+                        content=ft.Row(
+                            controls=[
+                                ft.Text("Nuevo proyecto", size=20, weight=ft.FontWeight.BOLD)
+                            ],
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER
+                        )
+                    ),
+                    ft.Divider(height=1, color="black"),
+                    ft.Row(
+                        expand=True,
+                        controls=[
+                            ft.Container(
+                                expand=True,
+                                height=180,
+                                content=ft.Column(
+                                    controls=[
+                                        ft.Text(
+                                            "¿Quieres crear otro proyecto?", 
+                                            size=16, 
+                                            weight=ft.FontWeight.BOLD,
+                                            text_align=ft.TextAlign.CENTER
+                                        ),
+                                        ft.Text(
+                                            "Este botón reiniciará completamente el asistente, "
+                                            "permitiéndote crear un nuevo proyecto desde el inicio. "
+                                            "Se borrarán todos los datos del proyecto actual.",
+                                            size=12,
+                                            text_align=ft.TextAlign.CENTER,
+                                            color=ft.Colors.BLACK87
+                                        )
+                                    ],
+                                    spacing=15,
+                                    alignment=ft.MainAxisAlignment.CENTER,
+                                    horizontal_alignment=ft.CrossAxisAlignment.CENTER
+                                ),
+                                padding=20
+                            ),
+                            ft.Container(
+                                width=100,
+                                alignment=ft.alignment.center,
+                                content=ft.ElevatedButton(
+                                    content=ft.Text("NUEVO PROYECTO", color="white", size=11),
+                                    bgcolor="#4CAF50",
+                                    height=40,
+                                    on_click=self.nuevo_proyecto,
+                                    style=ft.ButtonStyle(
+                                        shape=ft.RoundedRectangleBorder(radius=2),
+                                        overlay_color=ft.Colors.with_opacity(0.1, "white"),
+                                        side=ft.BorderSide(1, ft.Colors.BLACK)
+                                    )
+                                )
+                            )
+                        ],
+                        spacing=20,
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+                    )
+                ]
+            )
+        )
+
         # Contenido principal sin overlay
         self.contenido_principal = ft.Column(
                 controls=[
@@ -519,7 +591,14 @@ class UI:
                     ),
                     ft.ResponsiveRow(
                         controls=[
-                            self._wrap_container_with_wizard(self.contenedor5, "apps", 5, "Crear Apps Django"),
+                            ft.Column(
+                                col=4,
+                                controls=[
+                                    self._wrap_container_with_wizard(self.contenedor5, "apps", 5, "Crear Apps Django"),
+                                    ft.Container(height=10),  # Espacio reducido entre contenedores
+                                    self.contenedor7
+                                ]
+                            ),
                             self._wrap_container_with_wizard(self.contenedor4, "modelos", 4, "Crear modelos"),
                             self._wrap_container_with_wizard(self.contenedor6, "servidor", 6, "Servidor y usuarios"),
                         ]
@@ -687,7 +766,14 @@ class UI:
             ),
             ft.ResponsiveRow(
                 controls=[
-                    self._wrap_container_with_wizard(self.contenedor5, "apps", 5, "Crear Apps Django"),
+                    ft.Column(
+                        col=4,
+                        controls=[
+                            self._wrap_container_with_wizard(self.contenedor5, "apps", 5, "Crear Apps Django"),
+                            ft.Container(height=10),  # Espacio reducido entre contenedores
+                            self.contenedor7
+                        ]
+                    ),
                     self._wrap_container_with_wizard(self.contenedor4, "modelos", 4, "Crear modelos"),
                     self._wrap_container_with_wizard(self.contenedor6, "servidor", 6, "Servidor y usuarios"),
                 ]
@@ -1608,6 +1694,82 @@ class UI:
         
         await self._run_django_command(["shell", "-c", script])
         print("Superusuario creado exitosamente!")
+
+    def nuevo_proyecto(self, e):
+        """Resetea completamente el wizard para crear un nuevo proyecto"""
+        try:
+            # Detener servidor si está ejecutándose
+            if (hasattr(self.state, 'proceso_servidor') and 
+                self.state.proceso_servidor and 
+                self.state.proceso_servidor.poll() is None):
+                self.state.proceso_servidor.terminate()
+                try:
+                    self.state.proceso_servidor.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.state.proceso_servidor.kill()
+                    self.state.proceso_servidor.wait()
+            
+            # Resetear el estado del proyecto
+            self.state = ProjectState()
+            
+            # Limpiar todos los campos
+            self.txt_folder_name.value = ""
+            self.txt_nombre_proyecto.value = ""
+            self.txt_nombre_app.value = ""
+            self.txt_tabla.value = ""
+            self.txt_admin_user.value = ""
+            self.txt_admin_email.value = ""
+            self.txt_admin_pass.value = ""
+            
+            # Resetear labels y estados
+            self.lbl_path.value = "Ninguna"
+            self.lbl_path.color = ft.Colors.BLACK
+            self.lbl_estado_entorno.visible = False
+            
+            # Resetear botones a estado inicial
+            self.btn_aceptar_entorno.disabled = False
+            self.btn_aceptar_entorno.bgcolor = "#4CAF50"
+            self.btn_aceptar_entorno.content = ft.Text("ACEPTAR", color="white")
+            
+            self.btn_iniciar_servidor.disabled = False
+            self.btn_detener_servidor.disabled = True
+            
+            # Limpiar listas
+            self.lista_apps.controls.clear()
+            self.dd_apps.options.clear()
+            self.dd_apps.value = None
+            
+            # Limpiar campos de modelo - resetear a estado inicial
+            self.campos_column.controls = [
+                self.dd_apps,
+                ft.Row([
+                    ft.Text("Nombre", width=200, weight="bold"),
+                    ft.Text("Tipo", width=150, weight="bold"),
+                ], spacing=20),
+                *[self._crear_fila_campo(i) for i in range(1, 5)],
+            ]
+            
+            # Resetear lógica de carpetas
+            if hasattr(self, 'logic'):
+                self.logic.folder_name = ""
+                self.logic.folder_path = ""
+            
+            # Cerrar cualquier overlay de error visible
+            self.error_overlay.visible = False
+            
+            # Refrescar la UI del wizard
+            self._refresh_wizard_ui()
+            
+            print("✅ Wizard reiniciado completamente. Listo para crear un nuevo proyecto.")
+            
+        except Exception as ex:
+            print(f"Error al resetear el wizard: {ex}")
+            # En caso de error, al menos cerrar overlay de error
+            try:
+                self.error_overlay.visible = False
+                self.page.update()
+            except:
+                pass
 
     def _crear_superusuario_alternativo(self, username: str, email: str, password: str):
         try:
