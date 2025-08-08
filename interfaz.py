@@ -77,6 +77,7 @@ class UI:
             label="Ej: Mi proyecto",
             width=150,
             height=40,
+            max_length=64,
             on_change=self.update_folder_name
         )
         self.lbl_path = ft.Text("Ninguna", style=ft.TextThemeStyle.BODY_SMALL)
@@ -932,15 +933,41 @@ class UI:
             print(f"Error al cerrar overlay de error: {ex}")
     
     def limpiar_y_cerrar(self, e=None):
-        """Limpia los campos del modelo Y cierra el overlay de error"""
+        """Limpia los campos apropiados según el contexto Y cierra el overlay de error"""
         try:
-            # Primero limpiar campos
-            self.limpiar_campos_modelo(e)
+            # Verificar si el error actual es de carpeta o de modelo según el mensaje
+            mensaje_actual = self.error_overlay.content.controls[1].content.value
+            
+            if any(keyword in mensaje_actual.lower() for keyword in ['carpeta', 'nombre', 'ubicación', 'reservado', 'caracteres']):
+                # Es un error de carpeta - limpiar campos de carpeta
+                self.limpiar_campos_carpeta()
+            else:
+                # Es un error de modelo - limpiar campos de modelo
+                self.limpiar_campos_modelo(e)
+                
             # Después cerrar el overlay
             self.cerrar_error()
             print("✅ Campos limpiados y overlay cerrado")
         except Exception as ex:
             print(f"Error al limpiar y cerrar: {ex}")
+
+    def limpiar_campos_carpeta(self):
+        """Limpia los campos del contenedor 1 (carpeta)"""
+        try:
+            # Limpiar el nombre de la carpeta
+            self.txt_folder_name.value = ""
+            # Resetear la ubicación
+            self.lbl_path.value = "Ninguna"
+            self.lbl_path.color = ft.Colors.BLACK
+            # Limpiar la lógica interna
+            if hasattr(self, 'logic'):
+                self.logic.folder_name = ""
+                self.logic.folder_path = ""
+            # Actualizar la UI
+            self.page.update()
+            print("✅ Campos de carpeta limpiados.")
+        except Exception as ex:
+            print(f"Error al limpiar campos de carpeta: {ex}")
 
     def mostrar_error_entorno(self, mensaje_error):
         """Muestra un overlay de error específico para el contenedor 2 (entorno virtual)"""
@@ -953,6 +980,18 @@ class UI:
             
         except Exception as ex:
             print(f"Error al mostrar error de entorno: {ex}")
+
+    def mostrar_error_carpeta(self, mensaje_error):
+        """Muestra un overlay de error específico para el contenedor 1 (crear carpeta)"""
+        try:
+            # Actualizar el texto del error (reutilizar el overlay existente)
+            self.error_overlay.content.controls[1].content.value = mensaje_error
+            self.error_overlay.visible = True
+            self.page.update()
+            print(f"✅ Error de carpeta mostrado: {mensaje_error}")
+            
+        except Exception as ex:
+            print(f"Error al mostrar error de carpeta: {ex}")
 
     def crear_dialogo_error(self, mensaje_error):
         """Crea un diálogo modal con información del error y opción de limpiar campos"""
@@ -1091,14 +1130,29 @@ class UI:
 
     def update_folder_name(self, e):
         folder_name = e.control.value.strip()
-        if not folder_name:
-            print("El nombre no puede estar vacío")
-            return
-
+        
+        # Validar caracteres inválidos
         invalid_chars = set('/\\:*?"<>|')
         if any(char in invalid_chars for char in folder_name):
-            print("Nombre inválido: no usar /, \\, :, *, ?, \", <, >, |")
+            self.mostrar_error_carpeta("❌ El nombre contiene caracteres no válidos: / \\ : * ? \" < > |")
             return
+        
+        # Validar nombres reservados de Windows
+        reserved_names = {
+            'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 
+            'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 
+            'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+        }
+        if folder_name.upper() in reserved_names:
+            self.mostrar_error_carpeta(f"❌ '{folder_name}' es un nombre reservado del sistema")
+            return
+            
+        # Validar longitud (aunque el TextField ya limita a 64, validamos por seguridad)
+        if len(folder_name) > 64:
+            self.mostrar_error_carpeta("❌ El nombre es demasiado largo (máximo 64 caracteres)")
+            return
+            
+        # Si todas las validaciones pasan, actualizar el nombre
         self.logic.folder_name = folder_name
         self.txt_folder_name.value = folder_name
         self.page.update()
@@ -1107,25 +1161,42 @@ class UI:
         try:
             selected_path = await self.logic.open_folder_dialog()
             if selected_path:
+                # Validar que la ruta existe y es accesible
+                if not os.path.exists(selected_path):
+                    self.mostrar_error_carpeta("❌ La ubicación seleccionada no existe")
+                    return
+                    
+                if not os.access(selected_path, os.W_OK):
+                    self.mostrar_error_carpeta("❌ No tienes permisos de escritura en la ubicación seleccionada")
+                    return
+                
                 selected_path = os.path.normpath(selected_path)
-                self.state.ruta_base = selected_path
+                self.logic.folder_path = selected_path
                 self.lbl_path.value = selected_path
                 self.lbl_path.color = ft.Colors.BLACK
                 self.page.update()
+            else:
+                print("No se seleccionó ninguna carpeta")
                 
         except Exception as e:
             print(f"Error al seleccionar carpeta: {e}")
-            self.page.snack_bar = ft.SnackBar(
-                ft.Text(f"Error: {str(e)}"),
-                bgcolor=ft.Colors.RED
-            )
-            self.page.snack_bar.open = True
-            self.page.update()
+            self.mostrar_error_carpeta(f"❌ Error al seleccionar carpeta: {str(e)}")
 
     async def create_folder(self, e):
         if not hasattr(self, 'logic'):
-            print("Error interno: no se pudo inicializar la lógica de carpetas")
+            self.mostrar_error_carpeta("❌ Error interno: no se pudo inicializar la lógica de carpetas")
             return 
+            
+        # Validar que se ha ingresado un nombre de carpeta
+        if not self.txt_folder_name.value.strip():
+            self.mostrar_error_carpeta("⚠️ Debes ingresar un nombre para la carpeta")
+            return
+            
+        # Validar que se ha seleccionado una ubicación
+        if not self.logic.folder_path:
+            self.mostrar_error_carpeta("⚠️ Debes seleccionar una ubicación para crear la carpeta")
+            return
+        
         success, message, full_path = self.logic.create_folder_action()
         if success:
             self.state.ruta_base = os.path.normpath(full_path)
@@ -1134,6 +1205,9 @@ class UI:
 
             self.state.update_wizard_step("carpeta", True)
             self._refresh_wizard_ui()
+        else:
+            # Mostrar error usando el banner rojo
+            self.mostrar_error_carpeta(f"❌ {message}")
         self.page.update()                                     
 
     def _crear_panel_tablas(self):
