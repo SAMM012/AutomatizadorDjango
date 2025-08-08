@@ -1819,6 +1819,65 @@ class UI:
             self.page.snack_bar.open = True
             self.page.update()
 
+    def handle_keyboard_event(self, e: ft.KeyboardEvent):
+        """Maneja los atajos de teclado de la aplicación"""
+        try:
+            # Atajo: Escape - Cerrar overlay de error
+            if e.key == "Escape" and self.error_overlay.visible:
+                self.cerrar_error()
+                return
+            
+            # Atajo: Ctrl+N - Nuevo proyecto
+            if e.key == "N" and e.ctrl:
+                self.nuevo_proyecto(e)
+                return
+                
+            # Atajo: Enter - Activar botón ACEPTAR del paso actual
+            if e.key == "Enter":
+                current_step = self._get_current_step()
+                if current_step:
+                    self._execute_current_step_action(current_step)
+                return
+                
+        except Exception as ex:
+            print(f"Error en manejo de teclado: {ex}")
+
+    def _get_current_step(self):
+        """Determina cuál es el paso actual del wizard"""
+        steps_order = ["carpeta", "entorno", "bd_config", "apps", "modelos", "servidor"]
+        
+        for step in steps_order:
+            if not self.state.wizard_states[step]:
+                return step
+        return None  # Todos los pasos completados
+
+    def _execute_current_step_action(self, step):
+        """Ejecuta la acción del paso actual (equivale a presionar ACEPTAR)"""
+        try:
+            if step == "carpeta":
+                self.page.run_task(self.create_folder, None)
+            elif step == "entorno":
+                self.page.run_task(self.crear_entorno_handler, None)
+            elif step == "bd_config":
+                self.save_db_config(None)
+            elif step == "apps":
+                self.page.run_task(self.generar_apps, None)
+            elif step == "modelos":
+                # Para modelos, solo ejecutar si hay datos válidos
+                if self.txt_tabla.value.strip() and self.dd_apps.value:
+                    self.page.run_task(self.guardar_modelo, None)
+            elif step == "servidor":
+                # Para servidor, ejecutar crear superusuario si hay datos válidos
+                if (self.txt_admin_user.value.strip() and 
+                    self.txt_admin_email.value.strip() and 
+                    self.txt_admin_pass.value.strip()):
+                    self._trigger_async_creation()
+                else:
+                    # Si no hay datos de superusuario, intentar iniciar servidor
+                    self.page.run_task(self.iniciar_servidor, None)
+        except Exception as ex:
+            print(f"Error ejecutando acción del paso {step}: {ex}")
+
     def build(self):
         return self.contenedores
     
@@ -1830,6 +1889,7 @@ def main(page: ft.Page):
     page.scroll = ft.ScrollMode.AUTO
 
     ui = UI(page) 
+    page.on_keyboard_event = ui.handle_keyboard_event
     page.add(ui.build())
 
 ft.app(target=main)
