@@ -88,9 +88,13 @@ class UI:
         )
         
         self.txt_entorno = ft.TextField(
-            label="Ej venv",
+            label="Nombre del entorno virtual",
             width=200,
-            height=40
+            height=40,
+            value="venv",
+            disabled=True,
+            bgcolor=ft.Colors.GREY_200,
+            color=ft.Colors.GREY_700
         )
         
         self.txt_tabla = ft.TextField(
@@ -100,9 +104,11 @@ class UI:
         )
         
         self.txt_nombre_proyecto = ft.TextField(
-            label="Ej: Mi proyecto",
+            label="Ej: mi_proyecto",
             width=200,
-            height=40
+            height=40,
+            max_length=64,
+            on_change=self.validar_nombre_proyecto
         )
         
         self.txt_nombre_app = ft.TextField(
@@ -935,12 +941,15 @@ class UI:
     def limpiar_y_cerrar(self, e=None):
         """Limpia los campos apropiados según el contexto Y cierra el overlay de error"""
         try:
-            # Verificar si el error actual es de carpeta o de modelo según el mensaje
+            # Verificar si el error actual es de carpeta, entorno o modelo según el mensaje
             mensaje_actual = self.error_overlay.content.controls[1].content.value
             
-            if any(keyword in mensaje_actual.lower() for keyword in ['carpeta', 'nombre', 'ubicación', 'reservado', 'caracteres']):
+            if any(keyword in mensaje_actual.lower() for keyword in ['carpeta', 'ubicación']):
                 # Es un error de carpeta - limpiar campos de carpeta
                 self.limpiar_campos_carpeta()
+            elif any(keyword in mensaje_actual.lower() for keyword in ['proyecto', 'entorno', 'django', 'reservada', 'números', 'espacios']):
+                # Es un error de entorno - limpiar campos de entorno
+                self.limpiar_campos_entorno()
             else:
                 # Es un error de modelo - limpiar campos de modelo
                 self.limpiar_campos_modelo(e)
@@ -950,6 +959,17 @@ class UI:
             print("✅ Campos limpiados y overlay cerrado")
         except Exception as ex:
             print(f"Error al limpiar y cerrar: {ex}")
+
+    def limpiar_campos_entorno(self):
+        """Limpia los campos del contenedor 2 (solo el nombre del proyecto Django)"""
+        try:
+            # Solo limpiar el nombre del proyecto Django (el entorno es fijo: "venv")
+            self.txt_nombre_proyecto.value = ""
+            # Actualizar la UI
+            self.page.update()
+            print("✅ Campo del proyecto Django limpiado.")
+        except Exception as ex:
+            print(f"Error al limpiar campos de entorno: {ex}")
 
     def limpiar_campos_carpeta(self):
         """Limpia los campos del contenedor 1 (carpeta)"""
@@ -992,6 +1012,43 @@ class UI:
             
         except Exception as ex:
             print(f"Error al mostrar error de carpeta: {ex}")
+
+    def validar_nombre_proyecto(self, e):
+        """Valida el nombre del proyecto Django en tiempo real"""
+        nombre_proyecto = e.control.value.strip()
+        
+        if not nombre_proyecto:
+            return  # Permitir campo vacío temporalmente
+        
+        # Validar que solo contenga letras, números y guiones bajos
+        if not nombre_proyecto.replace('_', '').replace('-', '').isalnum():
+            self.mostrar_error_entorno("❌ El nombre del proyecto solo puede contener letras, números, guiones (-) y guiones bajos (_)")
+            return
+            
+        # Validar que no empiece con número
+        if nombre_proyecto[0].isdigit():
+            self.mostrar_error_entorno("❌ El nombre del proyecto no puede empezar con un número")
+            return
+            
+        # Validar que no contenga espacios
+        if ' ' in nombre_proyecto:
+            self.mostrar_error_entorno("❌ El nombre del proyecto no puede contener espacios. Usa guiones bajos (_) o guiones (-)")
+            return
+            
+        # Nombres reservados de Python/Django más comunes
+        reserved_names = {
+            'django', 'test', 'admin', 'auth', 'contenttypes', 'sessions', 
+            'messages', 'staticfiles', 'models', 'views', 'urls', 'forms',
+            'settings', 'wsgi', 'asgi', 'manage', 'migration', 'migrations',
+            'import', 'class', 'def', 'if', 'else', 'for', 'while', 'try',
+            'except', 'with', 'as', 'from', 'return', 'yield', 'lambda',
+            'global', 'nonlocal', 'assert', 'del', 'pass', 'break', 'continue'
+        }
+        
+        if nombre_proyecto.lower() in reserved_names:
+            self.mostrar_error_entorno(f"❌ '{nombre_proyecto}' es una palabra reservada. Usa nombres como: mi_sitio, proyecto_web, app_principal")
+            return
+
 
     def crear_dialogo_error(self, mensaje_error):
         """Crea un diálogo modal con información del error y opción de limpiar campos"""
