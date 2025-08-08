@@ -118,7 +118,11 @@ class UI:
             icon=ft.Icons.PLAY_ARROW,
             on_click=self.iniciar_servidor,
             bgcolor=ft.Colors.GREEN_800,
-            color=ft.Colors.WHITE
+            color=ft.Colors.WHITE,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
+            )
         )
 
         self.btn_detener_servidor = ft.ElevatedButton(
@@ -127,7 +131,11 @@ class UI:
             on_click=self.detener_servidor,
             bgcolor=ft.Colors.RED_800,
             color=ft.Colors.WHITE,
-            disabled=True
+            disabled=True,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
+            )
         )
 
         self.txt_admin_user = ft.TextField(label="Nombre de admin", width=200)
@@ -139,7 +147,23 @@ class UI:
             icon=ft.Icons.PERSON_ADD,
             on_click=lambda e: self._trigger_async_creation(),
             bgcolor=ft.Colors.BLUE_800,
-            color="white"
+            color="white",
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
+            )
+        )
+
+        self.btn_aceptar_entorno = ft.ElevatedButton(
+            content=ft.Text("ACEPTAR", color="white"),
+            bgcolor="#4CAF50",
+            height=40,
+            on_click=self.crear_entorno_handler,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                overlay_color=ft.Colors.with_opacity(0.1, "white"),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
+            )
         )
 
         self.panel_tablas = self._crear_panel_tablas()
@@ -182,7 +206,10 @@ class UI:
                                         ft.ElevatedButton(
                                             "Seleccionar ubicaciion",
                                             icon=ft.Icons.FOLDER_OPEN,
-                                            on_click= self.select_folder
+                                            on_click= self.select_folder,
+                                            style=ft.ButtonStyle(
+                                                side=ft.BorderSide(1, ft.Colors.BLACK)
+                                            )
                                         ),
                                         ft.Row([
                                             ft.Text("Ubicacion seleccionada:", style=ft.TextThemeStyle.BODY_SMALL),
@@ -205,7 +232,8 @@ class UI:
                                     on_click=self.create_folder,
                                     style=ft.ButtonStyle(
                                         shape=ft.RoundedRectangleBorder(radius=2),
-                                        overlay_color="#FFFFFF"
+                                        overlay_color="#FFFFFF",
+                                        side=ft.BorderSide(1, ft.Colors.BLACK)
                                     )
                                 )
                             )                     
@@ -259,16 +287,7 @@ class UI:
                             ft.Container(
                                 width=100,
                                 alignment=ft.alignment.center,
-                                content=ft.ElevatedButton(
-                                    content=ft.Text("ACEPTAR", color="white"),
-                                    bgcolor="#4CAF50",
-                                    height=40,
-                                    on_click=self.crear_entorno_handler,
-                                    style=ft.ButtonStyle(
-                                        shape=ft.RoundedRectangleBorder(radius=2),
-                                        overlay_color=ft.Colors.with_opacity(0.1, "white")
-                                    )
-                                )
+                                content=self.btn_aceptar_entorno
                             )
                         ],
                         spacing=20,
@@ -334,7 +353,8 @@ class UI:
                                     on_click=self.save_db_config,
                                     style=ft.ButtonStyle(
                                         shape=ft.RoundedRectangleBorder(radius=2),
-                                        overlay_color=ft.Colors.with_opacity(0.1, "white")
+                                        overlay_color=ft.Colors.with_opacity(0.1, "white"),
+                                        side=ft.BorderSide(1, ft.Colors.BLACK)
                                     )
                                 )
                             )
@@ -378,7 +398,10 @@ class UI:
                             ft.ElevatedButton(
                                 "Añadir App",
                                 icon=ft.Icons.ADD,
-                                on_click=self.añadir_app
+                                on_click=self.añadir_app,
+                                style=ft.ButtonStyle(
+                                    side=ft.BorderSide(1, ft.Colors.BLACK)
+                                )
                             ),
                             ft.Text("Apps a crear:", weight="bold"),
                             self.lista_apps,
@@ -387,7 +410,10 @@ class UI:
                                 icon=ft.Icons.CHECK,
                                 on_click=self.generar_apps,
                                 bgcolor="#4CAF50",
-                                color="white"
+                                color="white",
+                                style=ft.ButtonStyle(
+                                    side=ft.BorderSide(1, ft.Colors.BLACK)
+                                )
                             )
                         ],
                         spacing=15
@@ -663,6 +689,12 @@ class UI:
             print(resultado)
             self.state.ruta_proyecto = str(Path(self.state.ruta_base) / nombre_proyecto)
             self.state.update_wizard_step("entorno", True)
+            
+            # Deshabilitar el botón después del éxito
+            self.btn_aceptar_entorno.disabled = True
+            self.btn_aceptar_entorno.bgcolor = ft.Colors.GREY_600
+            self.btn_aceptar_entorno.content = ft.Text("COMPLETADO", color="white", size=12)
+            
             self._refresh_wizard_ui()
             
         except Exception as ex:
@@ -1064,7 +1096,10 @@ class UI:
                 ft.ElevatedButton(
                     "Añadir campo",
                     icon=ft.Icons.ADD,
-                    on_click=self.añadir_campo
+                    on_click=self.añadir_campo,
+                    style=ft.ButtonStyle(
+                        side=ft.BorderSide(1, ft.Colors.BLACK)
+                    )
                 ),
                 ft.Row(
                     controls=[
@@ -1073,14 +1108,20 @@ class UI:
                             icon=ft.Icons.SAVE,
                             on_click=self.guardar_modelo,
                             bgcolor=ft.Colors.GREEN_800,
-                            color=ft.Colors.WHITE
+                            color=ft.Colors.WHITE,
+                            style=ft.ButtonStyle(
+                                side=ft.BorderSide(1, ft.Colors.BLACK)
+                            )
                         ),
                         ft.ElevatedButton(
                             "Continuar sin Modelo",
                             icon=ft.Icons.SKIP_NEXT,
                             on_click=self.continuar_sin_modelo,
                             bgcolor=ft.Colors.ORANGE_800,
-                            color=ft.Colors.WHITE
+                            color=ft.Colors.WHITE,
+                            style=ft.ButtonStyle(
+                                side=ft.BorderSide(1, ft.Colors.BLACK)
+                            )
                         )
                     ],
                     spacing=10,
