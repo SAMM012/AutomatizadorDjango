@@ -1,0 +1,560 @@
+================================================================================
+                    PLAN DE PRUEBAS COMPLETO - AutomatizadorDjango
+================================================================================
+
+OBJETIVO:
+---------
+Verificar que la aplicación genera proyectos Django con estructura estándar, 
+funcionalidad completa y sin errores mediante pruebas de múltiples niveles.
+
+================================================================================
+                              TIPOS DE PRUEBAS
+================================================================================
+
+1. PRUEBAS UNITARIAS
+====================
+Objetivo: Verificar componentes individuales aislados
+
+Clase DatabaseConfig:
+--------------------
+def test_database_config_initialization():
+    db_config = DatabaseConfig("TestProject")
+    assert db_config.project_name == "TestProject"
+    assert db_config.db_type == "sqlite"
+
+def test_set_database_type():
+    db_config = DatabaseConfig()
+    db_config.set_database_type("postgres")
+    assert db_config.db_type == "postgres"
+
+def test_generate_sqlite_config():
+    db_config = DatabaseConfig()
+    config = db_config._generate_sqlite_config()
+    assert "'ENGINE': 'django.db.backends.sqlite3'" in config
+
+def test_add_model():
+    db_config = DatabaseConfig()
+    db_config.add_model("users", "User", [{"name": "nombre", "type": "CharField"}])
+    assert "users" in db_config.apps
+    assert len(db_config.apps["users"]) == 1
+
+Clase DjangoManager:
+-------------------
+def test_create_standard_project():
+    # Mock subprocess.run
+    result = DjangoManager.create_standard_project("/path/venv", "TestProject", "/path/project")
+    # Verificar llamada correcta a django-admin
+
+def test_create_app():
+    result = DjangoManager.create_app("/path/project", "users")
+    # Verificar estructura de app creada
+
+def test_generate_model_code():
+    fields = [{"name": "nombre", "type": "CharField"}]
+    code = DjangoManager._generate_model_code("User", fields)
+    assert "class User(models.Model):" in code
+    assert "nombre = models.CharField" in code
+
+Clase FolderCreatorLogic:
+------------------------
+def test_validate_folder_name():
+    assert FolderCreatorLogic.validate_folder_name("proyecto_test") == True
+    assert FolderCreatorLogic.validate_folder_name("pro<yec>to") == False
+    assert FolderCreatorLogic.validate_folder_name("") == False
+
+def test_create_folder():
+    result = FolderCreatorLogic.create_folder("/tmp", "test_folder")
+    assert result == True
+    assert os.path.exists("/tmp/test_folder")
+
+Funciones de Entorno Virtual:
+----------------------------
+def test_crear_entorno_virtual():
+    result = crear_entorno_virtual("/tmp", "test_env", "TestProject")
+    # Verificar creación de venv y proyecto Django
+
+def test_detectar_python_executable():
+    # Verificar detección correcta Windows vs Unix
+    pass
+
+================================================================================
+
+2. PRUEBAS DE INTEGRACIÓN
+=========================
+Objetivo: Verificar interacción entre componentes
+
+Integración DatabaseConfig + DjangoManager:
+-------------------------------------------
+def test_database_config_integration():
+    """Verificar que DatabaseConfig genere settings.py válidos"""
+    db_config = DatabaseConfig("TestProject")
+    db_config.add_model("users", "User", [{"name": "nombre", "type": "CharField"}])
+    
+    # Generar archivos
+    db_config.generate_files("/tmp/test_project")
+    
+    # Verificar settings.py generado
+    settings_path = "/tmp/test_project/TestProject/settings.py"
+    assert os.path.exists(settings_path)
+    
+    with open(settings_path) as f:
+        content = f.read()
+        assert "ROOT_URLCONF = 'TestProject.urls'" in content
+        assert "'apps.users'," in content
+
+Integración Interfaz + Core Modules:
+------------------------------------
+def test_wizard_flow_integration():
+    """Verificar flujo completo del wizard"""
+    app = AutomatizadorApp()
+    
+    # Paso 1: Carpeta
+    app.state.ruta_base = "/tmp/test"
+    app.state.nombre_carpeta = "TestProject"
+    
+    # Paso 2: Entorno
+    app.state.nombre_entorno = "venv"
+    app.state.nombre_proyecto = "TestProject"
+    
+    # Paso 3: BD Config
+    app.db_config.project_name = "TestProject"
+    
+    # Verificar estado coherente
+    assert app.state.nombre_proyecto == app.db_config.project_name
+
+Integración Servidor Django:
+----------------------------
+def test_django_server_integration():
+    """Verificar que el proyecto generado funcione con servidor Django"""
+    # Crear proyecto completo
+    create_complete_project("/tmp/integration_test")
+    
+    # Iniciar servidor Django
+    server_process = start_django_server("/tmp/integration_test")
+    
+    # Verificar respuesta HTTP
+    response = requests.get("http://localhost:8000")
+    assert response.status_code == 200
+    
+    # Detener servidor
+    server_process.terminate()
+
+================================================================================
+
+3. PRUEBAS DE SISTEMA
+=====================
+Objetivo: Verificar la aplicación completa end-to-end
+
+PRUEBA DE SISTEMA 1: Flujo Completo Básico
+-------------------------------------------
+Configuración del entorno:
+- SO: Windows 10/11
+- Python: 3.8+
+- Permisos: Usuario normal
+
+def test_complete_basic_workflow():
+    """Prueba completa: Crear proyecto desde interfaz hasta servidor funcionando"""
+    
+    # Lanzar aplicación
+    app = launch_app()
+    
+    # PASO 1: Carpeta
+    app.select_folder("C:/Users/Test/Desktop")
+    app.set_folder_name("ProyectoBasico")
+    app.click_accept_folder()
+    
+    # PASO 2: Entorno Virtual
+    app.set_venv_name("venv_test")
+    app.set_project_name("MiProyecto")
+    app.click_accept_environment()
+    
+    # PASO 3: Base de Datos
+    app.select_database("sqlite")
+    app.click_accept_database()
+    
+    # PASO 4: Apps
+    app.add_app("usuarios")
+    app.click_accept_apps()
+    
+    # PASO 5: Modelos
+    app.add_model("usuarios", "Usuario", [
+        {"name": "nombre", "type": "CharField"},
+        {"name": "email", "type": "CharField"}
+    ])
+    app.click_accept_models()
+    
+    # PASO 6: Servidor
+    app.start_server()
+    app.create_superuser("admin", "admin@test.com", "password123")
+    
+    # VERIFICACIONES FINALES
+    assert app.server_is_running()
+    assert http_get("http://localhost:8000").status_code == 200
+    assert http_get("http://localhost:8000/admin/").status_code == 200
+    
+    # Verificar estructura de archivos
+    verify_project_structure("C:/Users/Test/Desktop/ProyectoBasico")
+    
+    app.stop_server()
+    app.close()
+
+PRUEBA DE SISTEMA 2: Manejo de Errores
+---------------------------------------
+def test_error_handling_system():
+    """Verificar manejo robusto de errores a nivel sistema"""
+    
+    scenarios = [
+        {
+            "name": "Sin permisos de escritura",
+            "setup": lambda: set_folder_readonly("C:/ReadOnly"),
+            "action": lambda app: app.create_project_in("C:/ReadOnly"),
+            "expected": "Error de permisos mostrado"
+        },
+        {
+            "name": "Python no instalado",
+            "setup": lambda: hide_python_from_path(),
+            "action": lambda app: app.create_environment(),
+            "expected": "Error de Python mostrado"
+        },
+        {
+            "name": "Proyecto existente",
+            "setup": lambda: create_existing_project("TestProject"),
+            "action": lambda app: app.create_project("TestProject"),
+            "expected": "Error de proyecto existente"
+        }
+    ]
+    
+    for scenario in scenarios:
+        scenario["setup"]()
+        app = launch_app()
+        scenario["action"](app)
+        assert scenario["expected"] in app.get_error_messages()
+        app.close()
+
+PRUEBA DE SISTEMA 3: Cross-Platform
+------------------------------------
+def test_cross_platform_system():
+    """Verificar funcionamiento en diferentes sistemas operativos"""
+    
+    platforms = [
+        {"os": "windows", "python_path": "Scripts/python.exe"},
+        {"os": "linux", "python_path": "bin/python"},
+        {"os": "macos", "python_path": "bin/python"}
+    ]
+    
+    for platform in platforms:
+        with system_platform(platform["os"]):
+            app = launch_app()
+            project = app.create_complete_project()
+            
+            # Verificar paths correctos
+            venv_python = project.path / "venv" / platform["python_path"]
+            assert venv_python.exists()
+            
+            # Verificar servidor funcional
+            app.start_server()
+            assert app.server_is_running()
+            app.stop_server()
+            app.close()
+
+PRUEBA DE SISTEMA 4: Performance y Escalabilidad
+-------------------------------------------------
+def test_performance_system():
+    """Verificar rendimiento con proyectos grandes"""
+    
+    # Proyecto con múltiples apps y modelos
+    large_project_config = {
+        "apps": ["usuarios", "productos", "pedidos", "categorias", "reportes"],
+        "models_per_app": 5,
+        "fields_per_model": 10
+    }
+    
+    start_time = time.time()
+    
+    app = launch_app()
+    project = app.create_project(large_project_config)
+    
+    creation_time = time.time() - start_time
+    
+    # Verificar tiempo de creación razonable (< 30 segundos)
+    assert creation_time < 30
+    
+    # Verificar que el servidor inicie correctamente
+    start_time = time.time()
+    app.start_server()
+    startup_time = time.time() - start_time
+    
+    assert startup_time < 10
+    assert app.server_is_running()
+    
+    app.close()
+
+================================================================================
+                             CASOS DE PRUEBA MANUALES
+================================================================================
+
+PRUEBA 1: Flujo Completo Básico
+-------------------------------
+Objetivo: Verificar el wizard de 6 pasos con configuración mínima
+
+Pasos:
+1. Carpeta: Crear carpeta "TestBasico" en escritorio
+2. Entorno: Nombre entorno "venv_test", proyecto "ProyectoTest"
+3. BD Config: Seleccionar SQLite (única opción disponible)
+4. Apps: Crear app "usuarios" 
+5. Modelos: Crear modelo "Usuario" con campos: nombre(CharField), email(CharField)
+6. Servidor: Iniciar servidor, crear superusuario
+
+Resultados esperados:
+TestBasico/
+├── manage.py
+├── requirements.txt          # Django>=5.0.0
+├── venv/                     # Entorno virtual activo
+├── apps/
+│   └── usuarios/
+│       ├── models.py         # Con modelo Usuario
+│       ├── admin.py          # Usuario registrado
+│       ├── forms.py          # CRUD forms
+│       ├── views.py          # CRUD views
+│       └── urls.py           # URLs configuradas
+└── ProyectoTest/             # ← Nombre dinámico
+    ├── asgi.py
+    ├── settings.py           # Configuración estándar
+    ├── urls.py               # Apps incluidas
+    └── wsgi.py
+
+PRUEBA 2: Múltiples Apps y Modelos
+-----------------------------------
+Objetivo: Verificar manejo de proyectos complejos
+
+Configuración:
+- Apps: "productos", "categorias", "pedidos"
+- Modelos por app:
+  - productos: Producto(nombre, precio, descripcion)
+  - categorias: Categoria(nombre, activa) 
+  - pedidos: Pedido(fecha, total, estado)
+
+Verificaciones:
+□ Cada app tiene estructura completa
+□ Todos los modelos en admin panel
+□ CRUD views funcionando
+□ URLs correctamente configuradas
+□ Migraciones exitosas
+
+PRUEBA 3: Nombres con Caracteres Especiales
+--------------------------------------------
+Objetivo: Validar manejo de nombres diversos
+
+Casos:
+- Proyecto: "Mi-Ecommerce_2024"
+- App: "gestion_usuarios" 
+- Modelo: "Perfil_Usuario"
+
+Verificaciones:
+□ Carpetas creadas correctamente
+□ Settings.py con nombres correctos
+□ Sin errores en generación de código
+
+PRUEBA 4: Funcionalidad del Servidor
+-------------------------------------
+Objetivo: Verificar gestión del servidor Django
+
+Pasos:
+1. Iniciar servidor → Verificar http://localhost:8000
+2. Crear 2 superusuarios diferentes
+3. Acceder a admin panel → Verificar login
+4. Detener servidor → Verificar proceso terminado
+5. Reiniciar servidor → Verificar funcionalidad
+
+PRUEBA 5: Validación de Errores
+--------------------------------
+Objetivo: Verificar manejo robusto de errores
+
+Casos de error:
+□ Carpeta sin permisos de escritura
+□ Nombres vacíos en campos obligatorios
+□ Nombres con caracteres inválidos
+□ Proyecto ya existente
+□ Falta de Python/Django en sistema
+
+Resultado esperado: Mensajes de error claros, aplicación no se cuelga
+
+PRUEBA 6: Reinicio de Aplicación
+---------------------------------
+Objetivo: Verificar botón "Nuevo Proyecto"
+
+Pasos:
+1. Completar proyecto hasta paso 4
+2. Clickear "Nuevo Proyecto"
+3. Verificar reset de interface
+4. Crear nuevo proyecto diferente
+
+Verificaciones:
+□ Todos los campos limpiados
+□ Pasos reiniciados al paso 1
+□ Nuevo proyecto independiente del anterior
+
+================================================================================
+                            PRUEBAS TÉCNICAS
+================================================================================
+
+PRUEBA 7: Calidad del Código Generado
+--------------------------------------
+Verificar archivos generados:
+
+models.py:
+```
+from django.db import models
+
+class Usuario(models.Model):
+    nombre = models.CharField(max_length=100, blank=True)
+    email = models.CharField(max_length=100, blank=True)
+```
+
+settings.py:
+□ ROOT_URLCONF = 'ProyectoTest.urls' ← Nombre dinámico
+□ INSTALLED_APPS incluye 'apps.usuarios'
+□ Configuración estándar Django
+
+requirements.txt:
+```
+Django>=5.0.0
+```
+
+PRUEBA 8: Cross-Platform
+-------------------------
+Objetivo: Verificar compatibilidad Windows/Linux
+
+Windows:
+□ Entorno virtual en Scripts/python.exe
+□ Rutas con backslash manejadas correctamente
+
+Linux/Mac:
+□ Entorno virtual en bin/python
+□ Rutas con forward slash
+
+================================================================================
+                         MATRIZ DE COBERTURA DE PRUEBAS
+================================================================================
+
+Componente        | Unitarias | Integración | Sistema
+------------------|-----------|-------------|--------
+DatabaseConfig    |     ✅    |     ✅      |   ✅
+DjangoManager     |     ✅    |     ✅      |   ✅
+FolderCreator     |     ✅    |     ✅      |   ✅
+ProjectState      |     ✅    |     ✅      |   ✅
+Interfaz GUI      |     ❌    |     ✅      |   ✅
+Servidor Django   |     ❌    |     ✅      |   ✅
+Cross-Platform    |     ❌    |     ✅      |   ✅
+Error Handling    |     ✅    |     ✅      |   ✅
+
+================================================================================
+                            HERRAMIENTAS DE TESTING
+================================================================================
+
+Framework de Pruebas:
+--------------------
+# Instalar dependencias de testing
+pip install pytest pytest-cov pytest-mock pytest-qt
+
+# Ejecutar pruebas
+pytest tests/ -v --cov=core --cov-report=html
+
+# Pruebas específicas por tipo
+pytest tests/unit/ -v
+pytest tests/integration/ -v  
+pytest tests/system/ -v
+
+Estructura de Archivos de Prueba:
+---------------------------------
+tests/
+├── unit/
+│   ├── test_database_config.py
+│   ├── test_django_manager.py
+│   ├── test_folder_creator.py
+│   └── test_project_state.py
+├── integration/
+│   ├── test_database_integration.py
+│   ├── test_wizard_flow.py
+│   └── test_server_integration.py
+├── system/
+│   ├── test_complete_workflow.py
+│   ├── test_error_scenarios.py
+│   ├── test_cross_platform.py
+│   └── test_performance.py
+├── fixtures/
+│   └── sample_projects/
+└── conftest.py
+
+================================================================================
+                              CRITERIOS DE ÉXITO
+================================================================================
+
+Cobertura de Código:
+-------------------
+- Unitarias: >90% cobertura de funciones core
+- Integración: >80% cobertura de flujos principales  
+- Sistema: 100% cobertura de casos de uso críticos
+
+Métricas de Calidad:
+-------------------
+- Tiempo de ejecución: Suite completa <5 minutos
+- Tasa de éxito: >95% en diferentes entornos
+- Detección de regresiones: 100% de bugs conocidos
+
+CRITERIOS DE ACEPTACIÓN:
+=======================
+
+✅ FUNCIONALIDAD CORE
+□ Wizard de 6 pasos funcional
+□ Proyectos Django válidos generados
+□ Servidor de desarrollo funciona
+□ Admin panel accesible
+□ CRUD completo por modelo
+
+✅ CALIDAD DE CÓDIGO
+□ Estructura estándar Django
+□ Nombres dinámicos (no hardcodeados)
+□ Archivos requeridos generados
+□ Sin errores de sintaxis
+
+✅ EXPERIENCIA DE USUARIO
+□ Interface intuitiva
+□ Mensajes de error claros
+□ Indicadores de progreso
+□ Atajos de teclado funcionando
+
+✅ ROBUSTEZ
+□ Manejo de errores graceful
+□ Validaciones de entrada
+□ Limpieza de recursos
+□ Recovery de estados incorrectos
+
+================================================================================
+                          DOCUMENTACIÓN SUGERIDA
+================================================================================
+
+Manual de Usuario:
+-----------------
+1. Instalación: Requisitos y setup
+2. Tutorial: Crear primer proyecto paso a paso
+3. Referencia: Descripción de cada paso del wizard
+4. Solución de Problemas: Errores comunes y soluciones
+
+Documentación Técnica:
+---------------------
+1. Arquitectura: Diagrama de componentes
+2. API: Descripción de clases principales
+3. Extensión: Cómo agregar nuevas funcionalidades
+4. Testing: Cómo ejecutar las pruebas
+
+================================================================================
+                                    NOTAS
+================================================================================
+
+- Ejecutar pruebas en entornos limpios para evitar interferencias
+- Mantener datos de prueba separados de datos de producción
+- Documentar cualquier configuración especial requerida
+- Actualizar este plan cuando se agreguen nuevas funcionalidades
+
+================================================================================

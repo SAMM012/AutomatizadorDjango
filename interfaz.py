@@ -2,100 +2,267 @@ import asyncio
 import threading
 import flet as ft
 from core.crear_carpeta import FolderCreatorLogic
-from core.crear_entorno import crear_entorno_virtual
+from core.crear_entorno import crear_entorno_virtual, instalar_psycopg2_sync
 from core.django_manager import DjangoManager
 from core.bd_config import DatabaseConfig
+from core.project_state import ProjectState 
 from pathlib import Path
 import subprocess
 import os
 import re
 
+
 class UI:
 
+    def debug_state(self):
+        """Método helper para debugging del estado"""
+        print("\n=== ESTADO ACTUAL ===")
+        print(f"Ruta base: {self.state.ruta_base}")
+        print(f"Ruta proyecto: {self.state.ruta_proyecto}")
+        print(f"Nombre proyecto: {self.state.nombre_proyecto}")
+        print(f"Base de datos: {self.state.database_choice}")
+        print(f"Apps a crear: {self.state.apps_a_crear}")
+        print(f"Apps generadas: {self.state.apps_generadas}")
+        print(f"Wizard states: {self.state.wizard_states}")
+        print("=====================\n")
+
     def __init__(self, page:ft.Page):
+
         self.page = page
+        self.state = ProjectState()
         self.logic = FolderCreatorLogic(page)
+        self.db_config = DatabaseConfig("Mi_proyecto")
+        self.django_manager = DjangoManager()
+        
+        # Contenedor de error centrado
+        self.error_overlay = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.WARNING, color=ft.Colors.WHITE),
+                ft.Container(  # Contenedor para centrar el texto un poco más
+                    content=ft.Text("", 
+                                  color=ft.Colors.WHITE, 
+                                  size=15,  # Un punto más grande
+                                  text_align=ft.TextAlign.CENTER),
+                    expand=True,
+                    alignment=ft.alignment.center_left,
+                    margin=ft.margin.only(left=20)  # 20% más centrado
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.CLEANING_SERVICES,
+                    tooltip="Limpiar campos", 
+                    icon_color=ft.Colors.WHITE,
+                    on_click=self.limpiar_y_cerrar
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE,
+                    tooltip="Cerrar",
+                    icon_color=ft.Colors.WHITE,
+                    on_click=self.cerrar_error
+                )
+            ]),
+            bgcolor=ft.Colors.RED_400,
+            padding=15,
+            border_radius=8,
+            width=750,  # 50% más largo (500 + 250 = 750)
+            alignment=ft.alignment.center,  # Centrar contenido
+            shadow=ft.BoxShadow(
+                spread_radius=2,
+                blur_radius=15,
+                color=ft.Colors.BLACK38,
+            ),
+            visible=False
+        )
+
         self.txt_folder_name =ft.TextField(
             label="Ej: Mi proyecto",
             width=150,
             height=40,
+            max_length=64,
             on_change=self.update_folder_name
         )
-        self.ruta_base=""
         self.lbl_path = ft.Text("Ninguna", style=ft.TextThemeStyle.BODY_SMALL)
-        self.database_choice="sqlite"
-        self.db_config = DatabaseConfig()
-        self.django_manager = DjangoManager()
-
-        
-
         self.dd_apps = ft.Dropdown(
-            options=[],
-            label="Selecciona una app",
-            width=200
+                    options=[],
+                    label="Selecciona una app",
+                    width=200
         )
-
+        
         self.txt_entorno = ft.TextField(
-            label="Ej venv",
-            width= 200,
-            height=40
+            label="Nombre del entorno virtual",
+            width=200,
+            height=40,
+            value="venv",
+            disabled=True,
+            bgcolor=ft.Colors.GREY_200,
+            color=ft.Colors.GREY_700
         )
-
+        
         self.txt_tabla = ft.TextField(
             label="Ingresa el nombre de la tabla",
             width=280,
             height=40
         )
-
+        
         self.txt_nombre_proyecto = ft.TextField(
-            label="Ej: Mi proyecto",
+            label="Ej: mi_proyecto",
             width=200,
-            height=40
+            height=40,
+            max_length=64,
+            on_change=self.validar_nombre_proyecto
         )
-
-        self.panel_tablas = self._crear_panel_tablas()
-
-            #VARIABLES PARA APPS/CREAR APPS
-        self.apps_a_crear = []
+        
         self.txt_nombre_app = ft.TextField(
             label="Ej: usuarios",
             width=200,
             height=40
         )
-
-        self.apps_generadas=[]
-        self.lista_apps = ft.Column()  
-
-        self.color_teal = "teal"
+        
+        self.lista_apps = ft.Column()
+        self.color_teal = "teal" 
 
         self.btn_iniciar_servidor = ft.ElevatedButton(
             "Iniciar Servidor",
-            icon=ft.icons.PLAY_ARROW,
+            icon=ft.Icons.PLAY_ARROW,
             on_click=self.iniciar_servidor,
-            bgcolor=ft.colors.GREEN_800,
-            color=ft.colors.WHITE
+            bgcolor=ft.Colors.GREEN_800,
+            color=ft.Colors.WHITE,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
             )
-        
+        )
+
         self.btn_detener_servidor = ft.ElevatedButton(
             "Detener Servidor",
-            icon=ft.icons.STOP,
+            icon=ft.Icons.STOP,
             on_click=self.detener_servidor,
-            bgcolor=ft.colors.RED_800,
-            color=ft.colors.WHITE,
-            disabled=True
+            bgcolor=ft.Colors.RED_800,
+            color=ft.Colors.WHITE,
+            disabled=True,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
             )
-        
+        )
+
         self.txt_admin_user = ft.TextField(label="Nombre de admin", width=200)
         self.txt_admin_email = ft.TextField(label="Email", width=200)
         self.txt_admin_pass = ft.TextField(label="Contraseña", password=True, width=200)
 
+        # Campos para configuración PostgreSQL
+        self.txt_db_name = ft.TextField(
+            label="Nombre de la base de datos",
+            width=200,
+            height=35,
+            value="mi_db",
+            on_change=self.validar_campo_postgres
+        )
+        self.txt_db_user = ft.TextField(
+            label="Usuario",
+            width=200,
+            height=35,
+            value="postgres",
+            on_change=self.validar_campo_postgres
+        )
+        self.txt_db_password = ft.TextField(
+            label="Contraseña",
+            width=200,
+            height=35,
+            password=True,
+            on_change=self.validar_campo_postgres
+        )
+        self.txt_db_host = ft.TextField(
+            label="Host",
+            width=200,
+            height=35,
+            value="localhost",
+            on_change=self.validar_campo_postgres
+        )
+        self.txt_db_port = ft.TextField(
+            label="Puerto",
+            width=200,
+            height=35,
+            value="5432",
+            on_change=self.validar_campo_postgres
+        )
+
+        # Contenedor para campos PostgreSQL (inicialmente oculto)
+        self.postgres_fields_container = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("Configuración PostgreSQL:", weight=ft.FontWeight.BOLD, size=14),
+                    ft.Row([
+                        ft.Column([
+                            self.txt_db_name,
+                            self.txt_db_user,
+                            self.txt_db_password
+                        ], spacing=8),
+                        ft.Column([
+                            self.txt_db_host,
+                            self.txt_db_port
+                        ], spacing=8)
+                    ], spacing=20)
+                ],
+                spacing=10
+            ),
+            padding=ft.padding.only(top=15, bottom=10),
+            visible=False
+        )
+
+        # RadioGroup para selección de base de datos
+        self.radio_group_bd = ft.RadioGroup(
+            content=ft.Row([
+                ft.Radio(value="sqlite", label="SQLite"),
+                ft.Radio(value="postgres", label="PostgreSQL (Próximamente)", disabled=True)
+            ]),
+            value="sqlite",
+            on_change=self.update_db_choice
+        )
+
         self.btn_crear_su = ft.ElevatedButton(
             "Crear Superusuario",
-            icon=ft.icons.PERSON_ADD,
+            icon=ft.Icons.PERSON_ADD,
             on_click=lambda e: self._trigger_async_creation(),
-            bgcolor=ft.colors.BLUE_800,
-            color="white"
+            bgcolor=ft.Colors.BLUE_800,
+            color="white",
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
+            )
         )
+
+        self.btn_aceptar_entorno = ft.ElevatedButton(
+            content=ft.Text("ACEPTAR", color="white"),
+            bgcolor="#4CAF50",
+            height=40,
+            on_click=lambda e: self.page.run_task(self.crear_entorno_handler, e),
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                overlay_color=ft.Colors.with_opacity(0.1, "white"),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
+            )
+        )
+
+        self.btn_aceptar_bd = ft.ElevatedButton(
+            content=ft.Text("ACEPTAR", color="white"),
+            bgcolor="#4CAF50",
+            height=40,
+            on_click=self.save_db_config,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                overlay_color=ft.Colors.with_opacity(0.1, "white"),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
+            )
+        )
+
+        self.lbl_estado_entorno = ft.Text(
+            "",
+            style=ft.TextThemeStyle.BODY_SMALL,
+            color=ft.Colors.BLACK,
+            visible=False
+        )
+
+        self.panel_tablas = self._crear_panel_tablas()
 
         self.contenedor1 = ft.Container(
             col=4,
@@ -134,8 +301,11 @@ class UI:
                                         self.txt_folder_name,
                                         ft.ElevatedButton(
                                             "Seleccionar ubicaciion",
-                                            icon=ft.icons.FOLDER_OPEN,
-                                            on_click= self.select_folder
+                                            icon=ft.Icons.FOLDER_OPEN,
+                                            on_click= self.select_folder,
+                                            style=ft.ButtonStyle(
+                                                side=ft.BorderSide(1, ft.Colors.BLACK)
+                                            )
                                         ),
                                         ft.Row([
                                             ft.Text("Ubicacion seleccionada:", style=ft.TextThemeStyle.BODY_SMALL),
@@ -158,7 +328,8 @@ class UI:
                                     on_click=self.create_folder,
                                     style=ft.ButtonStyle(
                                         shape=ft.RoundedRectangleBorder(radius=2),
-                                        overlay_color="#FFFFFF"
+                                        overlay_color="#FFFFFF",
+                                        side=ft.BorderSide(1, ft.Colors.BLACK)
                                     )
                                 )
                             )                     
@@ -192,40 +363,45 @@ class UI:
                         )
                     ),
                     ft.Divider(height=1, color="black"),
-                    ft.Row(
+                    ft.Column(
                         expand=True,
                         controls=[
-                            ft.Container(
+                            ft.Row(
                                 expand=True,
-                                height=180,
-                                content=ft.Column(
-                                    controls=[
-                                        ft.Text("Ingresa el nombre de tu entorno virtual", weight=ft.FontWeight.BOLD),
-                                        self.txt_entorno,
-                                        ft.Text("Ingresa el nombre del proyecto Django", weight=ft.FontWeight.BOLD),
-                                        self.txt_nombre_proyecto
-                                    ],
-                                    spacing=5
-                                ),
-                                padding=8
-                            ),
-                            ft.Container(
-                                width=100,
-                                alignment=ft.alignment.center,
-                                content=ft.ElevatedButton(
-                                    content=ft.Text("ACEPTAR", color="white"),
-                                    bgcolor="#4CAF50",
-                                    height=40,
-                                    on_click=self.crear_entorno_handler,
-                                    style=ft.ButtonStyle(
-                                        shape=ft.RoundedRectangleBorder(radius=2),
-                                        overlay_color=ft.colors.with_opacity(0.1, "white")
+                                controls=[
+                                    ft.Container(
+                                        expand=True,
+                                        height=180,
+                                        content=ft.Column(
+                                            controls=[
+                                                ft.Text("Ingresa el nombre de tu entorno virtual", weight=ft.FontWeight.BOLD),
+                                                self.txt_entorno,
+                                                ft.Text("Ingresa el nombre del proyecto Django", weight=ft.FontWeight.BOLD),
+                                                self.txt_nombre_proyecto
+                                            ],
+                                            spacing=5
+                                        ),
+                                        padding=8
+                                    ),
+                                    ft.Container(
+                                        width=100,
+                                        content=ft.Column(
+                                            controls=[
+                                                self.btn_aceptar_entorno,
+                                                ft.Container(
+                                                    content=self.lbl_estado_entorno,
+                                                    padding=ft.padding.only(top=10),
+                                                    alignment=ft.alignment.center
+                                                )
+                                            ],
+                                            horizontal_alignment=ft.CrossAxisAlignment.CENTER
+                                        )
                                     )
-                                )
+                                ],
+                                spacing=20,
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
                             )
-                        ],
-                        spacing=20,
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+                        ]
                     )
                 ]
             )
@@ -249,7 +425,6 @@ class UI:
                             ],
                             alignment=ft.MainAxisAlignment.CENTER,
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                           
                         )
                     ),
                     ft.Divider(height=1, color="black"),
@@ -261,37 +436,30 @@ class UI:
                                 expand=True,
                                 height=180,
                                 content=ft.Column(
-                                    
                                     controls=[
-                                        ft.Text("Seleccione que tipo de base de datos usar:", size=20, weight=ft.FontWeight.BOLD),
+                                        ft.Text("Seleccione que tipo de base de datos usar:", size=16, weight=ft.FontWeight.BOLD),
                                         
-                                        ft.RadioGroup(
-                                            content=ft.Row([
-                                                ft.Radio(value="sqlite", label="SQLite"),
-                                                ft.Radio(value="post", label="PostgreSQL")
-                                            ]),
-                                            value="sqlite",
-                                            on_change= self.update_db_choice
-                                        )
+                                        self.radio_group_bd,
+                                        
+                                        # Contenedor de campos PostgreSQL (se muestra/oculta dinámicamente)
+                                        self.postgres_fields_container
                                     ],
-                                    alignment=ft.MainAxisAlignment.CENTER
-                                )
+                                    spacing=10
+                                ),
+                                padding=20
                             ),
                             ft.Container(
                                 width=100,
-                                alignment=ft.alignment.center,
-                                content=ft.ElevatedButton(
-                                    content=ft.Text("ACEPTAR", color="white"),
-                                    bgcolor="#4CAF50",
-                                    height=40,
-                                    on_click=self.save_db_config,
-                                    style=ft.ButtonStyle(
-                                        shape=ft.RoundedRectangleBorder(radius=2),
-                                        overlay_color=ft.colors.with_opacity(0.1, "white")
-                                    )
+                                content=ft.Column(
+                                    controls=[
+                                        self.btn_aceptar_bd
+                                    ],
+                                    alignment=ft.MainAxisAlignment.CENTER,
+                                    horizontal_alignment=ft.CrossAxisAlignment.CENTER
                                 )
                             )
-                        ]
+                        ],
+                        spacing=10
                     )
                 ]
             )
@@ -330,17 +498,23 @@ class UI:
                             self.txt_nombre_app,
                             ft.ElevatedButton(
                                 "Añadir App",
-                                icon=ft.icons.ADD,
-                                on_click=self.añadir_app
+                                icon=ft.Icons.ADD,
+                                on_click=self.añadir_app,
+                                style=ft.ButtonStyle(
+                                    side=ft.BorderSide(1, ft.Colors.BLACK)
+                                )
                             ),
                             ft.Text("Apps a crear:", weight="bold"),
                             self.lista_apps,
                             ft.ElevatedButton(
                                 "Generar Apps",
-                                icon=ft.icons.CHECK,
+                                icon=ft.Icons.CHECK,
                                 on_click=self.generar_apps,
                                 bgcolor="#4CAF50",
-                                color="white"
+                                color="white",
+                                style=ft.ButtonStyle(
+                                    side=ft.BorderSide(1, ft.Colors.BLACK)
+                                )
                             )
                         ],
                         spacing=15
@@ -375,7 +549,7 @@ class UI:
                         ],
                         spacing=15
                     ),
-                    ft.Divider(height=30, color=ft.colors.TRANSPARENT),
+                    ft.Divider(height=30, color=ft.Colors.TRANSPARENT),
                     ft.Container(
                         content=ft.Row(
                             controls=[
@@ -406,63 +580,454 @@ class UI:
             
         )
 
-        self.contenedores = ft.ResponsiveRow(
-            controls=[
-                self.contenedor1,
-                self.contenedor2,
-                self.contenedor3,
-                self.contenedor5,
-                self.contenedor4,
-                self.contenedor6,
-            ],
-            expand=True
-        
+        self.contenedor7 = ft.Container(
+            col=4,
+            expand=True,
+            bgcolor=self.color_teal,
+            border_radius=10,
+            padding=10,
+            content=ft.Column(
+                controls=[
+                    ft.Container(
+                        expand=True,
+                        alignment=ft.alignment.center,
+                        content=ft.Row(
+                            controls=[
+                                ft.Text("Nuevo proyecto", size=20, weight=ft.FontWeight.BOLD)
+                            ],
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER
+                        )
+                    ),
+                    ft.Divider(height=1, color="black"),
+                    ft.Row(
+                        expand=True,
+                        controls=[
+                            ft.Container(
+                                expand=True,
+                                height=180,
+                                content=ft.Column(
+                                    controls=[
+                                        ft.Text(
+                                            "¿Quieres crear otro proyecto?", 
+                                            size=16, 
+                                            weight=ft.FontWeight.BOLD,
+                                            text_align=ft.TextAlign.CENTER
+                                        ),
+                                        ft.Text(
+                                            "Este botón reiniciará completamente el asistente, "
+                                            "permitiéndote crear un nuevo proyecto desde el inicio. "
+                                            "Se borrarán todos los datos del proyecto actual.",
+                                            size=12,
+                                            text_align=ft.TextAlign.CENTER,
+                                            color=ft.Colors.BLACK87
+                                        )
+                                    ],
+                                    spacing=15,
+                                    alignment=ft.MainAxisAlignment.CENTER,
+                                    horizontal_alignment=ft.CrossAxisAlignment.CENTER
+                                ),
+                                padding=20
+                            ),
+                            ft.Container(
+                                width=100,
+                                alignment=ft.alignment.center,
+                                content=ft.ElevatedButton(
+                                    content=ft.Text("NUEVO PROYECTO", color="white", size=11),
+                                    bgcolor="#4CAF50",
+                                    height=40,
+                                    on_click=self.nuevo_proyecto,
+                                    style=ft.ButtonStyle(
+                                        shape=ft.RoundedRectangleBorder(radius=2),
+                                        overlay_color=ft.Colors.with_opacity(0.1, "white"),
+                                        side=ft.BorderSide(1, ft.Colors.BLACK)
+                                    )
+                                )
+                            )
+                        ],
+                        spacing=20,
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+                    )
+                ]
+            )
         )
+
+        # Contenido principal sin overlay
+        self.contenido_principal = ft.Column(
+                controls=[
+                    ft.ResponsiveRow(
+                        controls=[
+                            self._wrap_container_with_wizard(self.contenedor1, "carpeta", 1, "Crear carpeta del proyecto"),
+                            self._wrap_container_with_wizard(self.contenedor2, "entorno", 2, "Crear entorno virtual"),
+                            self._wrap_container_with_wizard(self.contenedor3, "bd_config", 3, "Configurar base de datos"),
+                        ]
+                    ),
+                    ft.ResponsiveRow(
+                        controls=[
+                            ft.Column(
+                                col=4,
+                                controls=[
+                                    self._wrap_container_with_wizard(self.contenedor5, "apps", 5, "Crear Apps Django"),
+                                    ft.Container(height=10),  # Espacio reducido entre contenedores
+                                    self.contenedor7
+                                ]
+                            ),
+                            self._wrap_container_with_wizard(self.contenedor4, "modelos", 4, "Crear modelos"),
+                            self._wrap_container_with_wizard(self.contenedor6, "servidor", 6, "Servidor y usuarios"),
+                        ]
+                    )
+                ],
+                scroll=ft.ScrollMode.AUTO,
+                expand=True
+            )
+        
+        # Contenedores con overlay centrado
+        self.contenedores = ft.Column(
+            controls=[
+                ft.Container(  # Contenedor para centrar el error
+                    content=self.error_overlay,
+                    alignment=ft.alignment.center,
+                    padding=ft.padding.symmetric(horizontal=20, vertical=10)
+                ),
+                self.contenido_principal  # Contenido principal
+            ],
+            spacing=0,
+            expand=True
+        )
+
+    def _create_disabled_overlay(self):
+        return ft.Container(
+            expand=True,
+            width=float('inf'),  
+            height=float('inf'), 
+            bgcolor=ft.Colors.with_opacity(0.6, "grey"),  
+            border_radius=10,
+            alignment=ft.alignment.center,
+            content=ft.Column(
+                controls=[
+                    ft.Icon(ft.Icons.LOCK, size=50, color="white"),
+                    ft.Text(
+                        "Completa el paso anterior",
+                        color="white",
+                        weight=ft.FontWeight.BOLD,
+                        text_align=ft.TextAlign.CENTER,
+                        size=16
+                    )
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=15,
+                tight=True
+            )
+        )
+
+    def _create_step_indicator(self, step_number: int, title: str, is_completed: bool, is_current: bool):
+        if is_completed:
+            icon = ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN, size=20)
+            title_color = ft.Colors.GREEN
+        elif is_current:
+            icon = ft.Icon(ft.Icons.RADIO_BUTTON_UNCHECKED, color=ft.Colors.BLUE, size=20)
+            title_color = ft.Colors.BLUE
+        else:
+            icon = ft.Icon(ft.Icons.LOCK, color=ft.Colors.GREY_400, size=20)
+            title_color = ft.Colors.GREY_400
+        
+        return ft.Row(
+            controls=[
+                ft.Container(
+                    width=30,
+                    height=30,
+                    bgcolor=ft.Colors.with_opacity(0.1, title_color),
+                    border_radius=15,
+                    alignment=ft.alignment.center,
+                    content=ft.Text(str(step_number), color=title_color, weight=ft.FontWeight.BOLD)
+                ),
+                icon,
+                ft.Text(title, color=title_color, weight=ft.FontWeight.BOLD, size=16)
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=5
+        )
+
+    def _wrap_container_with_wizard(self, container, step_key: str, step_number: int, title: str):
+        is_completed = self.state.wizard_states[step_key] 
+        is_current = self._is_current_step(step_key)
+        is_enabled = is_completed or is_current
+        
+        if hasattr(container.content, 'controls') and len(container.content.controls) > 0:
+            container.content.controls[0] = ft.Container(
+                expand=True,
+                alignment=ft.alignment.center,
+                content=self._create_step_indicator(step_number, title, is_completed, is_current)
+            )
+        if is_enabled:
+            return ft.Container(
+                col=4,
+                expand=True,
+                content=container.content,
+                bgcolor=container.bgcolor,
+                border_radius=container.border_radius,
+                padding=container.padding
+            )
+        else:
+            return ft.Container(
+                col=4,
+                expand=True,
+                content=ft.Stack(
+                    controls=[
+                        ft.Container(
+                            expand=True,
+                            content=container.content,
+                            bgcolor=container.bgcolor,
+                            border_radius=container.border_radius,
+                            padding=container.padding
+                        ),
+                        ft.Container(
+                            left=0,
+                            top=0,
+                            right=0,
+                            bottom=0,
+                            bgcolor=ft.Colors.with_opacity(0.85, "grey"),
+                            border_radius=10,
+                            alignment=ft.alignment.center,
+                            content=ft.Column(
+                                controls=[
+                                    ft.Icon(ft.Icons.LOCK, size=50, color="white"),
+                                    ft.Text(
+                                        "Completa el paso anterior",
+                                        color="white",
+                                        weight=ft.FontWeight.BOLD,
+                                        size=16
+                                    )
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
+                                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                spacing=15
+                            )
+                        )
+                    ]
+                )
+            )
+
+
+    def _is_current_step(self, step_key: str) -> bool:
+        steps_order = ["carpeta", "entorno", "bd_config", "apps", "modelos", "servidor"]
+        
+        for i, step in enumerate(steps_order):
+            if step == step_key:
+                if i == 0:
+                    return not self.state.wizard_states[step] 
+                else:
+                    prev_completed = all(self.state.wizard_states[prev_step] for prev_step in steps_order[:i])  
+                    return prev_completed and not self.state.wizard_states[step] 
+        return False
+
+    def _update_wizard_state(self, step_key: str, completed: bool = True):
+        self.state.wizard_states[step_key] = completed 
+        self._refresh_wizard_ui()
+
+    def _refresh_wizard_ui(self):
+        # Actualizar solo el contenido principal, no el overlay
+        self.contenido_principal.controls = [
+            ft.ResponsiveRow(
+                controls=[
+                    self._wrap_container_with_wizard(self.contenedor1, "carpeta", 1, "Crear carpeta del proyecto"),
+                    self._wrap_container_with_wizard(self.contenedor2, "entorno", 2, "Crear entorno virtual"),
+                    self._wrap_container_with_wizard(self.contenedor3, "bd_config", 3, "Configurar base de datos"),
+                ]
+            ),
+            ft.ResponsiveRow(
+                controls=[
+                    ft.Column(
+                        col=4,
+                        controls=[
+                            self._wrap_container_with_wizard(self.contenedor5, "apps", 5, "Crear Apps Django"),
+                            ft.Container(height=10),  # Espacio reducido entre contenedores
+                            self.contenedor7
+                        ]
+                    ),
+                    self._wrap_container_with_wizard(self.contenedor4, "modelos", 4, "Crear modelos"),
+                    self._wrap_container_with_wizard(self.contenedor6, "servidor", 6, "Servidor y usuarios"),
+                ]
+            )
+        ]
+        self.page.update()
     
     async def crear_entorno_handler(self, e):
+        if not self.state.wizard_states["carpeta"]:
+            self.mostrar_error_entorno("⚠️ Primero debes crear la carpeta del proyecto")
+            return
+
         nombre_entorno = self.txt_entorno.value.strip()
         nombre_proyecto = self.txt_nombre_proyecto.value.strip()
         
         if not nombre_entorno or not nombre_proyecto:
-            print("Ingresa nombres para entorno y proyecto")
+            self.mostrar_error_entorno("⚠️ Ingresa nombres para el entorno virtual y el proyecto Django")
             return
-        try:
-            self.nombre_proyecto = nombre_proyecto 
-            # Crear entorno Y proyecto
-            resultado = crear_entorno_virtual(
-                nombre_entorno,
-                self.ruta_base,
-                nombre_proyecto
-            )
-            print(resultado)
             
-            # Actualizar ruta base para las apps
-            self.ruta_proyecto = str(Path(self.ruta_base) / nombre_proyecto)
+        try:
+            # Cambiar botón a estado de carga
+            self.btn_aceptar_entorno.disabled = True
+            self.btn_aceptar_entorno.bgcolor = ft.Colors.BLUE_800
+            self.btn_aceptar_entorno.content = ft.Text("INSTALANDO...", color="white", size=12)
+            
+            # Mostrar primer mensaje
+            self.lbl_estado_entorno.value = "Creando entorno virtual..."
+            self.lbl_estado_entorno.visible = True
             self.page.update()
             
+            self.state.nombre_proyecto = nombre_proyecto
+            
+            # Cambiar mensaje durante la instalación
+            self.lbl_estado_entorno.value = "Descargando Django..."
+            self.page.update()
+            
+            resultado = await crear_entorno_virtual(
+                nombre_entorno,
+                self.state.ruta_base,
+                nombre_proyecto
+            )
+            
+            # Mensaje final de configuración
+            self.lbl_estado_entorno.value = "Configurando proyecto..."
+            self.page.update()
+            
+            print(resultado)
+            self.state.ruta_proyecto = str(Path(self.state.ruta_base) / nombre_proyecto)
+            self.state.update_wizard_step("entorno", True)
+            
+            # Estado final: botón completado y ocultar texto
+            self.btn_aceptar_entorno.bgcolor = ft.Colors.GREY_600
+            self.btn_aceptar_entorno.content = ft.Text("COMPLETADO", color="white", size=12)
+            self.lbl_estado_entorno.visible = False
+            
+            self._refresh_wizard_ui()
+            
         except Exception as ex:
-            print(f" Error: {str(ex)}")
-    
+            # En caso de error, restaurar estado original
+            self.btn_aceptar_entorno.disabled = False
+            self.btn_aceptar_entorno.bgcolor = "#4CAF50"
+            self.btn_aceptar_entorno.content = ft.Text("ACEPTAR", color="white")
+            self.lbl_estado_entorno.visible = False
+            self.page.update()
+            
+            # Mostrar error específico según el tipo
+            error_msg = str(ex)
+            if "conflicts with the name" in error_msg:
+                self.mostrar_error_entorno(f"❌ El nombre '{nombre_proyecto}' está reservado por Django. Usa nombres como: sitio_web, mi_app, proyecto_django")
+            elif "Permission denied" in error_msg or "Access is denied" in error_msg:
+                self.mostrar_error_entorno("❌ Sin permisos para crear archivos en esta ubicación. Elige otra carpeta.")
+            elif "No space left on device" in error_msg:
+                self.mostrar_error_entorno("❌ Sin espacio en disco. Libera espacio o elige otra ubicación.")
+            else:
+                self.mostrar_error_entorno(f"❌ Error durante la instalación: {error_msg}")
+
     def update_db_choice(self, e):
-        self.database_choice = e.control.value  # Guarda la selección
-        print(f"Base de datos seleccionada: {self.database_choice}")  # Para debug
+        self.state.database_choice = e.control.value
+        
+        # Mostrar/ocultar campos PostgreSQL según la selección
+        if e.control.value == "postgres":
+            self.postgres_fields_container.visible = True
+        else:
+            self.postgres_fields_container.visible = False
+        
+        # Actualizar la UI
+        self.page.update()
+        print(f"Base de datos seleccionada: {self.state.database_choice}")
 
     def save_db_config(self, e):
-        if not hasattr(self, 'database_choice'):  # Validación adicional
-            self.database_choice = "sqlite"
-        
-        self.db_config.set_database_type(self.database_choice)
-        
-        if self.database_choice == "post":
-            # Aquí puedes pedir los datos de PostgreSQL si es necesario
-            self.db_config.set_postgres_config(
-                name="mydb",  # Estos valores deberían venir de inputs
-                user="postgres",
-                password="secret",
-                host="localhost",
-                port="5432"
-            )
-        print(f"Configuración {self.database_choice.upper()} guardada")
+        if not self.state.wizard_states["entorno"]:
+            self.mostrar_error_entorno("⚠️ Primero debes crear el entorno virtual")
+            return
+            
+        # Cambiar botón a estado de carga
+        self.btn_aceptar_bd.disabled = True
+        self.btn_aceptar_bd.bgcolor = ft.Colors.BLUE_800
+        self.btn_aceptar_bd.content = ft.Text("PROCESANDO...", color="white", size=12)
+        self.page.update()
+            
+        try:
+            # Validar configuración PostgreSQL si fue seleccionada
+            if self.state.database_choice == "postgres":
+                # Validar que todos los campos requeridos estén llenos
+                if not self.txt_db_name.value.strip():
+                    self.mostrar_error_entorno("❌ Ingresa el nombre de la base de datos")
+                    return
+                if not self.txt_db_user.value.strip():
+                    self.mostrar_error_entorno("❌ Ingresa el usuario de la base de datos")
+                    return
+                if not self.txt_db_host.value.strip():
+                    self.mostrar_error_entorno("❌ Ingresa el host de la base de datos")
+                    return
+                if not self.txt_db_port.value.strip():
+                    self.mostrar_error_entorno("❌ Ingresa el puerto de la base de datos")
+                    return
+                    
+                # Validar puerto
+                try:
+                    puerto = int(self.txt_db_port.value.strip())
+                    if not (1 <= puerto <= 65535):
+                        self.mostrar_error_entorno("❌ El puerto debe estar entre 1 y 65535")
+                        return
+                except ValueError:
+                    self.mostrar_error_entorno("❌ El puerto debe ser un número válido")
+                    return
+                
+                # Configurar PostgreSQL con los datos del usuario
+                self.db_config.set_postgres_config(
+                    name=self.txt_db_name.value.strip(),
+                    user=self.txt_db_user.value.strip(),
+                    password=self.txt_db_password.value,  # Puede estar vacío
+                    host=self.txt_db_host.value.strip(),
+                    port=self.txt_db_port.value.strip()
+                )
+            
+            # Actualizar nombre del proyecto en db_config
+            self.db_config.project_name = self.state.nombre_proyecto
+            
+            # Guardar tipo de base de datos
+            self.db_config.set_database_type(self.state.database_choice)
+            
+            # Instalar psycopg2 si se selecciona PostgreSQL
+            if self.state.database_choice == "postgres" and self.state.ruta_base:
+                venv_path = str(Path(self.state.ruta_base) / "venv")
+                print("🔧 Instalando driver de PostgreSQL...")
+                try:
+                    success = instalar_psycopg2_sync(venv_path)
+                    if not success:
+                        self.mostrar_error_entorno("❌ Error al instalar el driver de PostgreSQL. Verifica tu conexión a internet.")
+                        return
+                except Exception as e:
+                    print(f"Error instalando psycopg2: {e}")
+                    self.mostrar_error_entorno("❌ Error al instalar el driver de PostgreSQL.")
+                    return
+            
+            # Generar/actualizar settings.py con la nueva configuración
+            if self.state.ruta_proyecto:
+                self.db_config.generate_files(self.state.ruta_proyecto)
+            
+            print(f"Configuración {self.state.database_choice.upper()} guardada y aplicada")
+            
+            # Estado final: botón completado
+            self.btn_aceptar_bd.bgcolor = ft.Colors.GREY_600
+            self.btn_aceptar_bd.content = ft.Text("COMPLETADO", color="white", size=12)
+            
+            self.state.update_wizard_step("bd_config", True)
+            self._refresh_wizard_ui()
+            
+        except Exception as ex:
+            # En caso de error, restaurar estado original
+            self.btn_aceptar_bd.disabled = False
+            self.btn_aceptar_bd.bgcolor = "#4CAF50"
+            self.btn_aceptar_bd.content = ft.Text("ACEPTAR", color="white")
+            self.page.update()
+            
+            error_msg = str(ex)
+            self.mostrar_error_entorno(f"❌ Error al guardar configuración: {error_msg}")
+            
+        finally:
+            self.page.update()
 
     def _validar_campos_modelo(self) -> tuple:
         nombres_campos = []
@@ -472,173 +1037,406 @@ class UI:
                 if nombre:  
                     nombres_campos.append(nombre)
         
-        # Verificar duplicados
         if len(nombres_campos) != len(set(nombres_campos)):
             return False, nombres_campos
         return True, nombres_campos
-    
+
     async def guardar_modelo(self, e):
         try:
-            print("\n=== INICIO DE guardar_modelo() ===")
-            
-            # 1. Validaciones básicas
             nombre_tabla = self.txt_tabla.value.strip()
             if not nombre_tabla:
+                error_msg = "⚠️ Debes ingresar un nombre para la tabla/modelo."
                 print("Ingresa un nombre para la tabla")
+                self.mostrar_error_snackbar(error_msg)
                 return
                 
             if not self.dd_apps.value:
+                error_msg = "⚠️ Debes seleccionar una app antes de crear el modelo."
                 print("Selecciona una app primero")
+                self.mostrar_error_snackbar(error_msg)
                 return
                 
             app_name = self.dd_apps.value.replace(" (pendiente)", "")
-            app_dir = Path(self.ruta_proyecto) / "apps" / app_name
             
-            print(f"1. Ruta de la app: {app_dir}")
-            print(f"2. ¿Existe directorio?: {app_dir.exists()}")
-            
-            if not app_dir.exists():
-                print(f"La app {app_name} no existe. Genera la app primero.")
-                return
-            
-            # 2. Obtener y validar campos
             campos = []
-            for row in self.campos_column.controls[1:]:  # Saltar encabezado
-                if isinstance(row, ft.Row) and len(row.controls) >= 2:
-                    nombre = row.controls[0].value.strip()
-                    tipo = row.controls[1].value
-                    if nombre and tipo:
-                        campos.append({"name": nombre, "type": tipo})
+            print(f"\n=== DEBUG RECOLECCIÓN DE CAMPOS ===")
+            print(f"Total controles en campos_column: {len(self.campos_column.controls)}")
             
-            print(f"3. Campos obtenidos: {campos}")
+            for i, row in enumerate(self.campos_column.controls[1:], 1): 
+                print(f"Control {i}: {type(row)}")
+                if isinstance(row, ft.Row) and len(row.controls) >= 2:
+                    nombre = row.controls[0].value
+                    tipo = row.controls[1].value
+                    print(f"  Fila {i}: nombre='{nombre}', tipo='{tipo}'")
+                    
+                    # Filtrar campos problemáticos y vacíos
+                    if (nombre and nombre.strip() and tipo and 
+                        tipo != 'Tipo' and  # Filtrar tipo inválido
+                        nombre.strip() != 'Nombre' and  # Filtrar nombre por defecto
+                        tipo in ['CharField', 'IntegerField', 'TextField', 'BooleanField', 'DateTimeField', 'EmailField', 'ForeignKey']):
+                        
+                        campos.append({"name": nombre.strip(), "type": tipo})
+                        print(f"  ✓ Campo agregado: {nombre.strip()} -> {tipo}")
+                    else:
+                        print(f"  ✗ Campo ignorado (vacío, inválido o fantasma): '{nombre}' -> '{tipo}'")
+                        
+            print(f"Campos obtenidos: {campos}")
+            print("=====================================\n")
             
             if not campos:
+                error_msg = "⚠️ No se encontraron campos válidos. Asegúrate de llenar al menos un campo con nombre y tipo válidos."
                 print("Añade al menos un campo válido al modelo")
+                self.mostrar_error_snackbar(error_msg)
                 return
-            
-            # 3. Mapeo de tipos válidos
-            TIPOS_VALIDOS = {
-                'CharField': 'CharField(max_length=100)',
-                'IntegerField': 'IntegerField()',
-                'TextField': 'TextField()',
-                'BooleanField': 'BooleanField()',
-                'DateTimeField': 'DateTimeField(auto_now_add=True)',
-                'EmailField': 'EmailField()',
-                'ForeignKey': 'ForeignKey(to="self", on_delete=models.CASCADE)'
-            }
-            
-            # 4. Generar contenido del modelo
-            models_path = app_dir / "models.py"
-            print(f"4. Ruta models.py: {models_path}")
-            
-            # Leer contenido existente o crear nuevo
-            contenido = "from django.db import models\n\n"
-            if models_path.exists():
-                with open(models_path, "r") as f:
-                    contenido = f.read()
-            
-            print(f"5. Contenido inicial models.py:\n{contenido[:200]}...")
-            
-            # Generar nuevo modelo con tipos validados
-            nuevo_modelo = f"class {nombre_tabla}(models.Model):\n"
-            for campo in campos:
-                tipo_campo = campo['type']
-                if tipo_campo not in TIPOS_VALIDOS:
-                    tipo_campo = 'CharField'
-                    print(f"Tipo '{campo['type']}' no válido. Usando CharField")
-                    
-                nuevo_modelo += f"    {campo['name']} = models.{TIPOS_VALIDOS[tipo_campo]}\n"
-            
-            print(f"6. Nuevo modelo generado:\n{nuevo_modelo}")
-            
-            # 5. Actualizar archivo models.py
-            # Buscar y reemplazar el modelo si ya existe
-            patron = re.compile(rf"class {nombre_tabla}\(models\.Model\):.*?\n\n", re.DOTALL)
-            if patron.search(contenido):
-                contenido = patron.sub(nuevo_modelo, contenido)
+            venv_path = str(Path(self.state.ruta_base) / "venv")
+            resultado = DjangoManager.crear_modelo(
+                project_path=self.state.ruta_proyecto, 
+                app_name=app_name,
+                nombre_tabla=nombre_tabla,
+                campos=campos,
+                venv_path=venv_path
+            ) 
+            if resultado["success"]:
+                print(f"Modelo '{nombre_tabla}' guardado y migrado exitosamente")
+                
+                if not self.state.wizard_states["modelos"]:
+                    self.state.update_wizard_step("modelos", True)
+                    self._refresh_wizard_ui()
             else:
-                contenido += "\n" + nuevo_modelo
-            
-            with open(models_path, "w") as f:
-                f.write(contenido)
-            
-            print("7. Archivo models.py actualizado exitosamente")
-            
-            # 6. Actualizar admin.py
-            admin_path = app_dir / "admin.py"
-            admin_content = "from django.contrib import admin\n"
-            
-            if admin_path.exists():
-                with open(admin_path, "r") as f:
-                    admin_content = f.read()
-            
-            # Asegurar importación del modelo
-            if f"from .models import {nombre_tabla}" not in admin_content:
-                admin_content += f"\nfrom .models import {nombre_tabla}\n"
-            
-            # Asegurar registro del modelo
-            if f"admin.site.register({nombre_tabla})" not in admin_content:
-                admin_content += f"\nadmin.site.register({nombre_tabla})\n"
-            
-            with open(admin_path, "w") as f:
-                f.write(admin_content)
-            
-            print("8. Archivo admin.py actualizado")
-            
-            # 7. Ejecutar migraciones
-            venv_python = Path(self.ruta_base) / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python"
-            manage_py = Path(self.ruta_proyecto) / "manage.py"
-            
-            print(f"9. Ejecutando migraciones para {app_name}...")
-            
-            subprocess.run(
-                [str(venv_python), str(manage_py), "makemigrations", app_name],
-                check=True,
-                cwd=str(self.ruta_proyecto))
-            subprocess.run(
-                [str(venv_python), str(manage_py), "migrate"],
-                check=True,
-                cwd=str(self.ruta_proyecto))
-            
-            print("10. Migraciones aplicadas exitosamente")
-            print(f"Modelo '{nombre_tabla}' guardado y migrado")
-            
+                print(f"Error: {resultado['error']}")
+                self.mostrar_error_snackbar(f"❌ {resultado['error']}")
+                
         except Exception as ex:
-            print(f"\n=== ERROR ===\n{str(ex)}\n=============")
-            print(f"Error al guardar modelo: {str(ex)}")
+            error_msg = f"Error inesperado: {str(ex)}"
+            print(f"\n=== ERROR ===\n{error_msg}\n=============")
+            self.mostrar_error_snackbar(f"❌ {error_msg}")
             import traceback
             traceback.print_exc()
 
+    def continuar_sin_modelo(self, e):
+        """Permite continuar al paso siguiente sin crear un modelo"""
+        try:
+            if not self.state.wizard_states["apps"]:
+                print("Primero debes crear al menos una app Django")
+                return
+                
+            # Marcar el paso de modelos como completado
+            if not self.state.wizard_states["modelos"]:
+                self.state.update_wizard_step("modelos", True)
+                self._refresh_wizard_ui()
+                print("Paso de modelos omitido. Puedes continuar al paso del servidor.")
+                
+        except Exception as ex:
+            print(f"Error al continuar sin modelo: {str(ex)}")
+
+    def limpiar_campos_modelo(self, e=None):
+        """Limpia todos los campos del modelo para empezar de nuevo"""
+        try:
+            # Limpiar el nombre de la tabla
+            self.txt_tabla.value = ""
+            
+            # Limpiar solo los TextFields existentes, más simple y seguro
+            for i, row in enumerate(self.campos_column.controls[2:], 1):  # Saltar dropdown y header
+                if isinstance(row, ft.Row) and len(row.controls) >= 2:
+                    # Limpiar el campo de texto
+                    if hasattr(row.controls[0], 'value'):
+                        row.controls[0].value = ""
+                    
+                    # Resetear dropdown a CharField
+                    if hasattr(row.controls[1], 'value'):
+                        row.controls[1].value = "CharField"
+            
+            # Actualizar la UI
+            self.page.update()
+            
+            print("✅ Campos limpiados. Puedes agregar nuevos valores.")
+        except Exception as ex:
+            print(f"Error al limpiar campos: {ex}")
+            # Método alternativo más simple
+            try:
+                self.txt_tabla.value = ""
+                self.page.update()
+                print("✅ Nombre de tabla limpiado. Edita los campos manualmente.")
+            except:
+                print("❌ Error al limpiar. Edita los campos manualmente.")
+
+    def mostrar_error_snackbar(self, mensaje_error):
+        """Muestra un overlay flotante de error con opción de limpiar campos"""
+        try:
+            # Actualizar el texto del error (ahora está dentro de un Container)
+            self.error_overlay.content.controls[1].content.value = mensaje_error
+            self.error_overlay.visible = True
+            self.page.update()
+            print(f"✅ Overlay de error mostrado: {mensaje_error}")
+            
+        except Exception as ex:
+            print(f"Error al mostrar overlay de error: {ex}")
+            
+    def cerrar_error(self, e=None):
+        """Cierra el overlay de error"""
+        try:
+            self.error_overlay.visible = False
+            self.page.update()
+        except Exception as ex:
+            print(f"Error al cerrar overlay de error: {ex}")
+    
+    def limpiar_y_cerrar(self, e=None):
+        """Limpia los campos apropiados según el contexto Y cierra el overlay de error"""
+        try:
+            # Verificar si el error actual es de carpeta, entorno o modelo según el mensaje
+            mensaje_actual = self.error_overlay.content.controls[1].content.value
+            
+            if any(keyword in mensaje_actual.lower() for keyword in ['carpeta', 'ubicación']):
+                # Es un error de carpeta - limpiar campos de carpeta
+                self.limpiar_campos_carpeta()
+            elif any(keyword in mensaje_actual.lower() for keyword in ['proyecto', 'entorno', 'django', 'reservada', 'números', 'espacios']):
+                # Es un error de entorno - limpiar campos de entorno
+                self.limpiar_campos_entorno()
+            elif any(keyword in mensaje_actual.lower() for keyword in ['base de datos', 'puerto', 'host', 'usuario']):
+                # Es un error de base de datos - limpiar campos de PostgreSQL
+                self.limpiar_campos_postgres()
+            else:
+                # Es un error de modelo - limpiar campos de modelo
+                self.limpiar_campos_modelo(e)
+                
+            # Después cerrar el overlay
+            self.cerrar_error()
+            print("✅ Campos limpiados y overlay cerrado")
+        except Exception as ex:
+            print(f"Error al limpiar y cerrar: {ex}")
+
+    def limpiar_campos_entorno(self):
+        """Limpia los campos del contenedor 2 (solo el nombre del proyecto Django)"""
+        try:
+            # Solo limpiar el nombre del proyecto Django (el entorno es fijo: "venv")
+            self.txt_nombre_proyecto.value = ""
+            # Actualizar la UI
+            self.page.update()
+            print("✅ Campo del proyecto Django limpiado.")
+        except Exception as ex:
+            print(f"Error al limpiar campos de entorno: {ex}")
+
+    def limpiar_campos_postgres(self):
+        """Limpia los campos de configuración PostgreSQL"""
+        try:
+            # Resetear campos de PostgreSQL a valores por defecto
+            self.txt_db_name.value = "mi_db"
+            self.txt_db_user.value = "postgres"
+            self.txt_db_password.value = ""
+            self.txt_db_host.value = "localhost"
+            self.txt_db_port.value = "5432"
+            # Actualizar la UI
+            self.page.update()
+            print("✅ Campos de PostgreSQL limpiados.")
+        except Exception as ex:
+            print(f"Error al limpiar campos de PostgreSQL: {ex}")
+
+    def limpiar_campos_carpeta(self):
+        """Limpia los campos del contenedor 1 (carpeta)"""
+        try:
+            # Limpiar el nombre de la carpeta
+            self.txt_folder_name.value = ""
+            # Resetear la ubicación
+            self.lbl_path.value = "Ninguna"
+            self.lbl_path.color = ft.Colors.BLACK
+            # Limpiar la lógica interna
+            if hasattr(self, 'logic'):
+                self.logic.folder_name = ""
+                self.logic.folder_path = ""
+            # Actualizar la UI
+            self.page.update()
+            print("✅ Campos de carpeta limpiados.")
+        except Exception as ex:
+            print(f"Error al limpiar campos de carpeta: {ex}")
+
+    def mostrar_error_entorno(self, mensaje_error):
+        """Muestra un overlay de error específico para el contenedor 2 (entorno virtual)"""
+        try:
+            # Actualizar el texto del error (reutilizar el overlay existente)
+            self.error_overlay.content.controls[1].content.value = mensaje_error
+            self.error_overlay.visible = True
+            self.page.update()
+            print(f"✅ Error de entorno mostrado: {mensaje_error}")
+            
+        except Exception as ex:
+            print(f"Error al mostrar error de entorno: {ex}")
+
+    def mostrar_error_carpeta(self, mensaje_error):
+        """Muestra un overlay de error específico para el contenedor 1 (crear carpeta)"""
+        try:
+            # Actualizar el texto del error (reutilizar el overlay existente)
+            self.error_overlay.content.controls[1].content.value = mensaje_error
+            self.error_overlay.visible = True
+            self.page.update()
+            print(f"✅ Error de carpeta mostrado: {mensaje_error}")
+            
+        except Exception as ex:
+            print(f"Error al mostrar error de carpeta: {ex}")
+
+    def validar_nombre_proyecto(self, e):
+        """Valida el nombre del proyecto Django en tiempo real"""
+        nombre_proyecto = e.control.value.strip()
+        
+        if not nombre_proyecto:
+            return  # Permitir campo vacío temporalmente
+        
+        # Validar que solo contenga letras, números y guiones bajos
+        if not nombre_proyecto.replace('_', '').replace('-', '').isalnum():
+            self.mostrar_error_entorno("❌ El nombre del proyecto solo puede contener letras, números, guiones (-) y guiones bajos (_)")
+            return
+            
+        # Validar que no empiece con número
+        if nombre_proyecto[0].isdigit():
+            self.mostrar_error_entorno("❌ El nombre del proyecto no puede empezar con un número")
+            return
+            
+        # Validar que no contenga espacios
+        if ' ' in nombre_proyecto:
+            self.mostrar_error_entorno("❌ El nombre del proyecto no puede contener espacios. Usa guiones bajos (_) o guiones (-)")
+            return
+            
+        # Nombres reservados de Python/Django más comunes
+        reserved_names = {
+            'django', 'test', 'admin', 'auth', 'contenttypes', 'sessions', 
+            'messages', 'staticfiles', 'models', 'views', 'urls', 'forms',
+            'settings', 'wsgi', 'asgi', 'manage', 'migration', 'migrations',
+            'import', 'class', 'def', 'if', 'else', 'for', 'while', 'try',
+            'except', 'with', 'as', 'from', 'return', 'yield', 'lambda',
+            'global', 'nonlocal', 'assert', 'del', 'pass', 'break', 'continue'
+        }
+        
+        if nombre_proyecto.lower() in reserved_names:
+            self.mostrar_error_entorno(f"❌ '{nombre_proyecto}' es una palabra reservada. Usa nombres como: mi_sitio, proyecto_web, app_principal")
+            return
+
+    def validar_campo_postgres(self, e):
+        """Valida campos de configuración PostgreSQL en tiempo real"""
+        campo = e.control
+        valor = campo.value.strip()
+        
+        # Validar que no esté vacío (excepto contraseña)
+        if not valor and campo != self.txt_db_password:
+            return  # Permitir vacío temporalmente
+            
+        # Validar puerto si es el campo de puerto
+        if campo == self.txt_db_port:
+            if not valor.isdigit():
+                self.mostrar_error_entorno("❌ El puerto debe ser un número válido (ej: 5432)")
+                return
+            puerto = int(valor)
+            if not (1 <= puerto <= 65535):
+                self.mostrar_error_entorno("❌ El puerto debe estar entre 1 y 65535")
+                return
+
+
+    def crear_dialogo_error(self, mensaje_error):
+        """Crea un diálogo modal con información del error y opción de limpiar campos"""
+        
+        def cerrar_dialogo(e):
+            self.dialogo_error.open = False
+            self.page.update()
+        
+        def limpiar_y_cerrar(e):
+            # Ejecutar limpieza de campos
+            self.limpiar_campos_modelo()
+            # Cerrar diálogo
+            self.dialogo_error.open = False
+            self.page.update()
+        
+        # Crear contenido del diálogo
+        contenido = ft.Column([
+            ft.Text("❌ Error en el Modelo", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.RED),
+            
+            ft.Divider(),
+            
+            ft.Text(
+                "Se encontró un problema con los campos:",
+                size=14,
+                weight=ft.FontWeight.BOLD
+            ),
+            
+            ft.Container(
+                content=ft.Text(
+                    mensaje_error,
+                    size=12,
+                    color=ft.Colors.RED_700
+                ),
+                bgcolor=ft.Colors.RED_50,
+                padding=10,
+                border_radius=5,
+                border=ft.border.all(1, ft.Colors.RED_200)
+            ),
+            
+            ft.Text(
+                "💡 Sugerencias:",
+                size=14,
+                weight=ft.FontWeight.BOLD,
+                color=ft.Colors.BLUE_700
+            ),
+            
+            ft.Column([
+                ft.Text("• Corrige manualmente los campos problemáticos", size=12),
+                ft.Text("• O usa 'Limpiar Campos' para empezar de nuevo", size=12),
+                ft.Text("• Evita nombres reservados como 'id' o 'pk'", size=12),
+                ft.Text("• Asegúrate de que no haya campos duplicados", size=12),
+            ], spacing=5),
+            
+            ft.Divider(),
+            
+            ft.Row([
+                ft.ElevatedButton(
+                    "✏️ Corregir Manualmente",
+                    on_click=cerrar_dialogo,
+                    bgcolor=ft.Colors.BLUE_600,
+                    color=ft.Colors.WHITE
+                ),
+                ft.ElevatedButton(
+                    "🧹 Limpiar Campos",
+                    on_click=limpiar_y_cerrar,
+                    bgcolor=ft.Colors.ORANGE_600,
+                    color=ft.Colors.WHITE
+                ),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+        ], spacing=15)
+        
+        # Crear el diálogo
+        self.dialogo_error = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("🚨 Error de Validación"),
+            content=contenido,
+            actions=[
+                ft.TextButton("Corregir", on_click=cerrar_dialogo),
+                ft.TextButton("Limpiar", on_click=limpiar_y_cerrar)
+            ]
+        )
+        
+        return self.dialogo_error
+
     def obtener_campos(self) -> list:
         campos = []
-        for row in self.campos_column.controls[1:]:  # Saltar encabezado
+        for row in self.campos_column.controls[1:]: 
             if isinstance(row, ft.Row) and len(row.controls) >= 2:
                 nombre = row.controls[0].value.strip()
                 tipo = row.controls[1].value
-                if nombre and tipo:  # Solo campos válidos
+                if nombre and tipo: 
                     campos.append({"name": nombre, "type": tipo})
         return campos
     
-
     async def generar_proyecto(self, e):
         try:
-            if not self.ruta_base:
+            if not self.state.ruta_base:
                 raise ValueError("Selecciona una ubicación para el proyecto primero")
-
-            project_path = Path(self.ruta_proyecto) if hasattr(self, 'ruta_proyecto') else Path(self.ruta_base) / "Mi_proyecto"
-            
-            # 1. Generar archivos de configuración (settings.py, etc.)
+            project_path = Path(self.state.ruta_proyecto) if self.state.ruta_proyecto else Path(self.state.ruta_base) / "Mi_proyecto"
             self.db_config.generate_files(str(project_path))
-            
-            venv_python = str(Path(self.ruta_base) / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python")
-            manage_py = project_path / "manage.py"
+            venv_python = str(self.state.get_venv_python_path())
+            manage_py = self.state.get_manage_py_path()
             
             if not manage_py.exists():
                 if not hasattr(self, 'django_manager'):
                     self.django_manager = DjangoManager()
                 
                 success = self.django_manager.create_standard_project(
-                    env_path=str(Path(self.ruta_base) / "venv"),
+                    env_path=str(Path(self.state.ruta_base) / "venv"),
                     project_name="Mi_proyecto",
                     project_dir=str(project_path.parent) 
                 )
@@ -668,58 +1466,87 @@ class UI:
 
     def update_folder_name(self, e):
         folder_name = e.control.value.strip()
-        if not folder_name:
-            print("El nombre no puede estar vacío")
-            return
-
+        
+        # Validar caracteres inválidos
         invalid_chars = set('/\\:*?"<>|')
         if any(char in invalid_chars for char in folder_name):
-            print("Nombre inválido: no usar /, \\, :, *, ?, \", <, >, |")
+            self.mostrar_error_carpeta("❌ El nombre contiene caracteres no válidos: / \\ : * ? \" < > |")
             return
         
+        # Validar nombres reservados de Windows
+        reserved_names = {
+            'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 
+            'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 
+            'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+        }
+        if folder_name.upper() in reserved_names:
+            self.mostrar_error_carpeta(f"❌ '{folder_name}' es un nombre reservado del sistema")
+            return
+            
+        # Validar longitud (aunque el TextField ya limita a 64, validamos por seguridad)
+        if len(folder_name) > 64:
+            self.mostrar_error_carpeta("❌ El nombre es demasiado largo (máximo 64 caracteres)")
+            return
+            
+        # Si todas las validaciones pasan, actualizar el nombre
         self.logic.folder_name = folder_name
         self.txt_folder_name.value = folder_name
         self.page.update()
     
     async def select_folder(self, e):
-            
-            try:
-                selected_path = await self.logic.open_folder_dialog()
-                if selected_path:
-                    selected_path = os.path.normpath(selected_path)
-                    self.ruta_base = selected_path
-                    self.lbl_path.value = selected_path
-                    self.lbl_path.color = ft.colors.BLACK
-                    self.page.update()
-            except Exception as e:
-                print(f"Error al seleccionar carpeta: {e}")
-                self.page.snack_bar = ft.SnackBar(
-                    ft.Text(f"Error: {str(e)}"),
-                    bgcolor=ft.colors.RED
-                )
-                self.page.snack_bar.open = True
+        try:
+            selected_path = await self.logic.open_folder_dialog()
+            if selected_path:
+                # Validar que la ruta existe y es accesible
+                if not os.path.exists(selected_path):
+                    self.mostrar_error_carpeta("❌ La ubicación seleccionada no existe")
+                    return
+                    
+                if not os.access(selected_path, os.W_OK):
+                    self.mostrar_error_carpeta("❌ No tienes permisos de escritura en la ubicación seleccionada")
+                    return
+                
+                selected_path = os.path.normpath(selected_path)
+                self.logic.folder_path = selected_path
+                self.lbl_path.value = selected_path
+                self.lbl_path.color = ft.Colors.BLACK
                 self.page.update()
+            else:
+                print("No se seleccionó ninguna carpeta")
+                
+        except Exception as e:
+            print(f"Error al seleccionar carpeta: {e}")
+            self.mostrar_error_carpeta(f"❌ Error al seleccionar carpeta: {str(e)}")
 
     async def create_folder(self, e):
         if not hasattr(self, 'logic'):
-            print("Error interno: no se pudo inicializar la lógica de carpetas")
+            self.mostrar_error_carpeta("❌ Error interno: no se pudo inicializar la lógica de carpetas")
+            return 
+            
+        # Validar que se ha ingresado un nombre de carpeta
+        if not self.txt_folder_name.value.strip():
+            self.mostrar_error_carpeta("⚠️ Debes ingresar un nombre para la carpeta")
             return
-        #Crear carpeta
+            
+        # Validar que se ha seleccionado una ubicación
+        if not self.logic.folder_path:
+            self.mostrar_error_carpeta("⚠️ Debes seleccionar una ubicación para crear la carpeta")
+            return
+        
         success, message, full_path = self.logic.create_folder_action()
         if success:
-            self.ruta_base= os.path.normpath(full_path)
+            self.state.ruta_base = os.path.normpath(full_path)
             self.lbl_path.value = full_path
-            self.lbl_path.color = ft.colors.BLACK
+            self.lbl_path.color = ft.Colors.BLACK
 
-        self.page.snack_bar = ft.SnackBar(
-            ft.Text(message),
-            bgcolor=ft.colors.GREEN_800 if success else ft.colors.RED_800
-        )
-        self.page.snack_bar.open = True
-        self.page.update()                                       
+            self.state.update_wizard_step("carpeta", True)
+            self._refresh_wizard_ui()
+        else:
+            # Mostrar error usando el banner rojo
+            self.mostrar_error_carpeta(f"❌ {message}")
+        self.page.update()                                     
 
     def _crear_panel_tablas(self):
-
         self.campos_column = ft.Column(
             controls=[
                 self.dd_apps,
@@ -747,20 +1574,41 @@ class UI:
                 container_campos, 
                 ft.ElevatedButton(
                     "Añadir campo",
-                    icon=ft.icons.ADD,
-                    on_click=self.añadir_campo
+                    icon=ft.Icons.ADD,
+                    on_click=self.añadir_campo,
+                    style=ft.ButtonStyle(
+                        side=ft.BorderSide(1, ft.Colors.BLACK)
+                    )
                 ),
-                ft.ElevatedButton(
-                    "Guardar Modelo",
-                    icon=ft.icons.SAVE,
-                    on_click=self.guardar_modelo,
-                    bgcolor=ft.colors.GREEN_800,
-                    color=ft.colors.WHITE
+                ft.Row(
+                    controls=[
+                        ft.ElevatedButton(
+                            "Guardar Modelo",
+                            icon=ft.Icons.SAVE,
+                            on_click=self.guardar_modelo,
+                            bgcolor=ft.Colors.GREEN_800,
+                            color=ft.Colors.WHITE,
+                            style=ft.ButtonStyle(
+                                side=ft.BorderSide(1, ft.Colors.BLACK)
+                            )
+                        ),
+                        ft.ElevatedButton(
+                            "Continuar sin Modelo",
+                            icon=ft.Icons.SKIP_NEXT,
+                            on_click=self.continuar_sin_modelo,
+                            bgcolor=ft.Colors.ORANGE_800,
+                            color=ft.Colors.WHITE,
+                            style=ft.ButtonStyle(
+                                side=ft.BorderSide(1, ft.Colors.BLACK)
+                            )
+                        )
+                    ],
+                    spacing=10,
+                    alignment=ft.MainAxisAlignment.CENTER
                 )
             ],
             expand=True,
             scroll=True
-
         )
 
     def añadir_campo(self, e):
@@ -769,10 +1617,10 @@ class UI:
             nueva_fila = self._crear_fila_campo(new_index + 1) 
             
             self.campos_column.controls.append(nueva_fila)
-            self.campos_column.update()  
+            self.page.update()  # Usar page.update() en lugar de campos_column.update()
             print(f"Campo {new_index + 1} añadido correctamente")
         except Exception as ex:
-            print(f"Error: {ex}")
+            print(f"Error al añadir campo: {ex}")
 
     def _crear_fila_campo(self, index):
         print(f"\nCreando fila {index}...")  
@@ -780,16 +1628,22 @@ class UI:
             controls=[
                 ft.TextField(
                     hint_text=f"campo_{index}",
-                    width=200
+                    width=200,
+                    value="",  # Forzar valor vacío
+                    autofocus=False
                 ),
                 ft.Dropdown(
                     width=150,
                     options=[
                         ft.dropdown.Option("CharField"),
-                        ft.dropdown.Option("IntegerField"),
-                        ft.dropdown.Option("DateTimeField")
+                        ft.dropdown.Option("IntegerField"), 
+                        ft.dropdown.Option("TextField"),
+                        ft.dropdown.Option("BooleanField"),
+                        ft.dropdown.Option("DateTimeField"),
+                        ft.dropdown.Option("EmailField"),
+                        ft.dropdown.Option("ForeignKey")
                     ],
-                    value="CharField"
+                    value="CharField"  # Valor por defecto seguro
                 )
             ],
             spacing=20
@@ -797,167 +1651,101 @@ class UI:
         
     def actualizar_dropdown_apps(self):
         self.dd_apps.options = []
-
-        for app in self.apps_generadas:
+        for app in self.state.apps_generadas:
             self.dd_apps.options.append(
                 ft.dropdown.Option(
                     text=app,
-                    style=ft.ButtonStyle(color=ft.colors.GREEN)
+                    style=ft.ButtonStyle(color=ft.Colors.GREEN)
                 )
             )
-        
-        # Apps pendientes (naranja)
-        for app in self.apps_a_crear:
+        for app in self.state.apps_a_crear:
             self.dd_apps.options.append(
                 ft.dropdown.Option(
                     text=f"{app} (pendiente)",
-                    style=ft.ButtonStyle(color=ft.colors.ORANGE)
+                    style=ft.ButtonStyle(color=ft.Colors.ORANGE)
                 )
             )
-        
         self.page.update()
 
     def añadir_app(self, e):
         nombre_app = self.txt_nombre_app.value.strip()
-        
-        # Validaciones
         if not nombre_app:
             print("Ingresa un nombre para la app")
             return
         if not nombre_app.isidentifier():
             print("Usa solo letras, números y _")
             return
-        if nombre_app in self.apps_a_crear:
-            print("Esta app ya fue añadida", color="orange")
-            return
-        
-        self.apps_a_crear.append(nombre_app)
-        self.lista_apps.controls.append(ft.Text(f"- {nombre_app}"))
-        self.dd_apps.options = [
-            ft.dropdown.Option(app) for app in self.apps_a_crear
-        ]
-        self.dd_apps.value = nombre_app 
-        self.txt_nombre_app.value = ""  
-        self.page.update()
+        if self.state.add_app_to_create(nombre_app):
+            self.lista_apps.controls.append(ft.Text(f"- {nombre_app}"))
+            self.dd_apps.options = [
+                ft.dropdown.Option(app) for app in self.state.apps_a_crear
+            ]
+            self.dd_apps.value = nombre_app
+            self.txt_nombre_app.value = ""
+            self.page.update()
+        else:
+            print("Esta app ya fue añadida")
+
 
     async def generar_apps(self, e):
         try:
-            if not hasattr(self, 'ruta_proyecto') or not self.ruta_proyecto:
+            if not self.state.ruta_proyecto:
                 print("Primero crea el proyecto Django")
                 return
-            project_dir = Path(self.ruta_proyecto)
             
-            # Crear directorio apps si no existe
-            apps_dir = project_dir / "apps"
-            apps_dir.mkdir(exist_ok=True)
+            resultado = DjangoManager.generar_apps_legacy(
+                self.state.ruta_proyecto, 
+                self.state.apps_a_crear 
+            )
             
-            # Asegurar que cada app tenga estructura completa
-            for app_name in self.apps_a_crear:
-                app_dir = apps_dir / app_name
-                app_dir.mkdir(exist_ok=True)
+            if resultado["success"]:
+                apps_creadas = self.state.move_apps_to_generated()
                 
-                # Archivos esenciales
-                init_file = app_dir / "__init__.py"
-                if not init_file.exists():
-                    init_file.touch()
+                self.lista_apps.controls.clear()
+                self.actualizar_dropdown_apps()
+                print(f"Apps generadas: {', '.join(apps_creadas)}")
                 
-                # apps.py completo
-                apps_py = app_dir / "apps.py"
-                if not apps_py.exists():
-                    with open(apps_py, "w") as f:
-                        f.write(f"""from django.apps import AppConfig
-
-class {app_name.capitalize()}Config(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'apps.{app_name}'
-""")
-
-            # models.py vacío si no existe
-                models_py = app_dir / "models.py"
-                if not models_py.exists():
-                    with open(models_py, "w") as f:
-                        f.write("from django.db import models\n\n# Modelos aquí\n")
-                # admin.py (vacío)
-                admin_py = app_dir / "admin.py"
-                if not admin_py.exists():
-                    with open(admin_py, "w") as f:
-                        f.write("from django.contrib import admin\n\n# Registra tus modelos aquí\n")
+                self.state.update_wizard_step("apps", True)
+                self._refresh_wizard_ui()
                 
-                            # views.py (vacío)
-                views_py = app_dir / "views.py"
-                if not views_py.exists():
-                    with open(views_py, "w") as f:
-                        f.write("from django.shortcuts import render\n\n# Vistas aquí\n")
-
-                # Actualizar settings.py
-                settings_path = project_dir / "Mi_proyecto" / "settings.py"
-                if settings_path.exists():
-                    with open(settings_path, "r+") as f:
-                        content = f.read()
-                        if f"'apps.{app_name}'" not in content:
-                            new_content = content.replace(
-                                "'django.contrib.staticfiles',",
-                                f"'django.contrib.staticfiles',\n    'apps.{app_name}',"
-                            )
-                            f.seek(0)
-                            f.write(new_content)
-                            f.truncate()
-        
-        # Limpiar lista y actualizar UI
-            self.apps_generadas.extend(self.apps_a_crear)
-            self.apps_a_crear.clear()
-            self.lista_apps.controls.clear()
-
-            self.actualizar_dropdown_apps()
-            print(f"Apps generadas: {', '.join(self.apps_generadas)}")
-            self.page.update()
-        
+                self.page.update()
+            else:
+                print(resultado["error"]) 
         except Exception as ex:
-            print(f"Error al generar apps: {str(ex)}" )
-        
+            print(f"Error al generar apps: {str(ex)}")      
 
     async def iniciar_servidor(self, e):
         try:
-            if not hasattr(self, 'ruta_base') or not self.ruta_base:
+            if not self.state.ruta_base:
                 print("Primero selecciona una ubicación para el proyecto")
                 return
                 
-            if not hasattr(self, 'ruta_proyecto') or not self.ruta_proyecto:
+            if not self.state.ruta_proyecto:
                 print("Primero genera el proyecto Django")
                 return
 
-            venv_dir = Path(self.ruta_base) / "venv"
-            scripts_dir = venv_dir / ("Scripts" if os.name == "nt" else "bin")
+            python_exe = self.state.get_venv_python_path()
+            manage_py = self.state.get_manage_py_path()
             
-            python_exe = None
-            for exe_name in ["python.exe", "python", "python3"]:
-                exe_path = scripts_dir / exe_name
-                if exe_path.exists():
-                    python_exe = exe_path
-                    break
-
-            if not python_exe:
-                print(f"No se encontró el ejecutable Python en: {scripts_dir}")
-                print("Archivos disponibles en el directorio:")
-                for f in scripts_dir.iterdir():
-                    print(f" - {f.name}")
+            if not python_exe.exists():
+                print(f"No se encontró el ejecutable Python en: {python_exe}")
                 return
 
-            manage_py = Path(self.ruta_proyecto) / "manage.py"
             if not manage_py.exists():
                 print(f"No se encontró manage.py en {manage_py}")
                 return
-
-            self.proceso_servidor = subprocess.Popen(
-                [str(python_exe.resolve()), str(manage_py.resolve()), "runserver"],
-                cwd=str(self.ruta_proyecto),
+            self.state.proceso_servidor = subprocess.Popen(
+                [str(python_exe), str(manage_py), "runserver"],
+                cwd=str(self.state.ruta_proyecto),
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True  
+                stderr=subprocess.STDOUT,  # Redirige stderr a stdout
+                text=True,
+                bufsize=1,  # Buffering de línea
+                universal_newlines=True
             )
 
-            print(f"Servidor iniciado en http://127.0.0.1:8000")
-            print(f"Python usado: {python_exe}")
+            print(f"Intentando iniciar servidor en http://127.0.0.1:8000")
+            print("Monitoreando salida del servidor...")
             threading.Thread(target=self.monitorear_servidor, daemon=True).start()
             
             self.btn_iniciar_servidor.disabled = True
@@ -965,44 +1753,82 @@ class {app_name.capitalize()}Config(AppConfig):
             self.page.update()
 
         except Exception as ex:
-            error_msg = f"Error al iniciar servidor: {str(ex)}"
-            print(error_msg)
-            self.page.snack_bar = ft.SnackBar(
-                ft.Text(error_msg),
-                bgcolor=ft.colors.RED
-            )
-            self.page.snack_bar.open = True
-            self.page.update()
-
-    def monitorear_servidor(self):
-        while self.proceso_servidor.poll() is None:
-            output = self.proceso_servidor.stdout.readline().strip()
-            if output:
-                print(f"[Servidor]: {output}")
-    
+            print(f"Error al iniciar servidor: {str(ex)}")
 
     def detener_servidor(self, e):
-        if hasattr(self, 'proceso_servidor') and self.proceso_servidor.poll() is None:
-            self.proceso_servidor.terminate()
-            print("Servidor detenido")
+        if (hasattr(self.state, 'proceso_servidor') and 
+            self.state.proceso_servidor and 
+            self.state.proceso_servidor.poll() is None):
+            
+            try:
+                # Primero intentamos terminar suavemente
+                self.state.proceso_servidor.terminate()
+                print("Enviando señal de terminación al servidor...")
+                
+                # Esperamos un poco para que el proceso termine
+                try:
+                    self.state.proceso_servidor.wait(timeout=3)
+                    print("Servidor detenido correctamente")
+                except subprocess.TimeoutExpired:
+                    # Si no responde en 3 segundos, lo forzamos
+                    print("Forzando detención del servidor...")
+                    self.state.proceso_servidor.kill()
+                    self.state.proceso_servidor.wait()
+                    print("Servidor detenido forzosamente")
+                    
+            except Exception as ex:
+                print(f"Error al detener servidor: {ex}")
+                
+        else:
+            print("No hay servidor ejecutándose")
         
         self.btn_iniciar_servidor.disabled = False
         self.btn_detener_servidor.disabled = True
         self.page.update()
+
+    def monitorear_servidor(self):
+        while (self.state.proceso_servidor and 
+            self.state.proceso_servidor.poll() is None):
+            output = self.state.proceso_servidor.stdout.readline().strip()
+            if output:
+                print(f"[Servidor]: {output}")
+        
+        # Si el proceso terminó, mostrar el código de salida
+        if self.state.proceso_servidor:
+            exit_code = self.state.proceso_servidor.poll()
+            if exit_code is not None:
+                if exit_code != 0:
+                    print(f"SERVIDOR TERMINÓ CON ERROR (código: {exit_code})")
+                    # Leer cualquier salida restante
+                    try:
+                        remaining_output = self.state.proceso_servidor.stdout.read()
+                        if remaining_output:
+                            print(f"Salida final: {remaining_output}")
+                    except:
+                        pass
+                else:
+                    print("Servidor detenido normalmente")
+                
+                # Actualizar estado de botones cuando el proceso termine
+                self.btn_iniciar_servidor.disabled = False
+                self.btn_detener_servidor.disabled = True
+                try:
+                    self.page.update()
+                except:
+                    pass
 
     def _trigger_async_creation(self):
         """Método puente síncrono para iniciar la operación async"""
         self.page.run_task(self._crear_su_handler_wrapper)
 
     async def _crear_su_handler_wrapper(self):
-        """Wrapper async para manejo de errores"""
         try:
             await self._crear_su_handler()
         except Exception as ex:
             print(f"Error: {str(ex)}")
 
     async def _crear_su_handler(self):
-        """Manejador principal"""
+        """Método principal para crear superusuario"""
         if not all([
             self.txt_admin_user.value.strip(),
             self.txt_admin_email.value.strip(),
@@ -1010,22 +1836,27 @@ class {app_name.capitalize()}Config(AppConfig):
         ]):
             raise ValueError("Complete todos los campos")
         
-        await self._run_django_command([
-            "createsuperuser",
-            "--noinput",
-            f"--username={self.txt_admin_user.value}",
-            f"--email={self.txt_admin_email.value}"
-        ])
-        
-        await self._set_password()
+        # Usar el método síncrono que funciona mejor
+        try:
+            self._crear_superusuario_alternativo(
+                self.txt_admin_user.value.strip(),
+                self.txt_admin_email.value.strip(),
+                self.txt_admin_pass.value.strip()
+            )
+        except Exception as e:
+            print(f"Error al crear superusuario: {str(e)}")
+            raise
+
 
     async def _run_django_command(self, args):
-        """Ejecuta un comando de Django de forma async"""
+        python_path = str(self.state.get_venv_python_path())
+        manage_py = str(self.state.get_manage_py_path())
+        
         proc = await asyncio.create_subprocess_exec(
-            str(Path(self.ruta_base)/"venv"/"Scripts"/"python"),
-            str(Path(self.ruta_proyecto)/"manage.py"),
+            python_path,
+            manage_py,
             *args,
-            cwd=str(self.ruta_proyecto),
+            cwd=str(self.state.ruta_proyecto), 
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -1033,72 +1864,241 @@ class {app_name.capitalize()}Config(AppConfig):
         if proc.returncode != 0:
             raise RuntimeError(stderr.decode().strip())
 
+
     async def _set_password(self):
-        """Establece la contraseña del superusuario"""
-        script = (f"""
-            from django.contrib.auth import get_user_model
-            User = get_user_model()
-            user = User.objects.get(username='{self.txt_admin_user.value}')
-            user.set_password('{self.txt_admin_pass.value}')
-            user.save()
-            """
-        )
+        script = f'''
+    import os
+    import django
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Mi_proyecto.settings")
+    django.setup()
+
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    try:
+        user = User.objects.get(username="{self.txt_admin_user.value}")
+        user.set_password("{self.txt_admin_pass.value}")
+        user.save()
+        print("Contraseña establecida correctamente")
+    except User.DoesNotExist:
+        print("Error: Usuario no encontrado")
+    except Exception as e:
+        print(f"Error: {{e}}")
+    '''.strip()
+        
         await self._run_django_command(["shell", "-c", script])
         print("Superusuario creado exitosamente!")
 
-    def _crear_superusuario_sync(self, username: str, email: str, password: str):
-        """Lógica síncrona para crear el usuario"""
+    def nuevo_proyecto(self, e):
+        """Resetea completamente el wizard para crear un nuevo proyecto"""
         try:
-            venv_python = str(Path(self.ruta_base) / "venv" / "Scripts" / "python")
-            manage_py = str(Path(self.ruta_proyecto) / "manage.py")
+            # Detener servidor si está ejecutándose
+            if (hasattr(self.state, 'proceso_servidor') and 
+                self.state.proceso_servidor and 
+                self.state.proceso_servidor.poll() is None):
+                self.state.proceso_servidor.terminate()
+                try:
+                    self.state.proceso_servidor.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.state.proceso_servidor.kill()
+                    self.state.proceso_servidor.wait()
+            
+            # Resetear el estado del proyecto
+            self.state = ProjectState()
+            
+            # Resetear configuración de base de datos
+            self.db_config = DatabaseConfig("Mi_proyecto")
+            self.radio_group_bd.value = "sqlite"  # Resetear a SQLite por defecto
+            
+            # Limpiar todos los campos
+            self.txt_folder_name.value = ""
+            self.txt_nombre_proyecto.value = ""
+            self.txt_nombre_app.value = ""
+            self.txt_tabla.value = ""
+            self.txt_admin_user.value = ""
+            self.txt_admin_email.value = ""
+            self.txt_admin_pass.value = ""
+            
+            # Resetear campos PostgreSQL
+            self.txt_db_name.value = "mi_db"
+            self.txt_db_user.value = "postgres" 
+            self.txt_db_password.value = ""
+            self.txt_db_host.value = "localhost"
+            self.txt_db_port.value = "5432"
+            self.postgres_fields_container.visible = False  # Ocultar campos PostgreSQL
+            
+            # Resetear labels y estados
+            self.lbl_path.value = "Ninguna"
+            self.lbl_path.color = ft.Colors.BLACK
+            self.lbl_estado_entorno.visible = False
+            
+            # Resetear botones a estado inicial
+            self.btn_aceptar_entorno.disabled = False
+            self.btn_aceptar_entorno.bgcolor = "#4CAF50"
+            self.btn_aceptar_entorno.content = ft.Text("ACEPTAR", color="white")
+            
+            self.btn_aceptar_bd.disabled = False
+            self.btn_aceptar_bd.bgcolor = "#4CAF50"
+            self.btn_aceptar_bd.content = ft.Text("ACEPTAR", color="white")
+            
+            self.btn_iniciar_servidor.disabled = False
+            self.btn_detener_servidor.disabled = True
+            
+            # Limpiar listas
+            self.lista_apps.controls.clear()
+            self.dd_apps.options.clear()
+            self.dd_apps.value = None
+            
+            # Limpiar campos de modelo - resetear a estado inicial
+            self.campos_column.controls = [
+                self.dd_apps,
+                ft.Row([
+                    ft.Text("Nombre", width=200, weight="bold"),
+                    ft.Text("Tipo", width=150, weight="bold"),
+                ], spacing=20),
+                *[self._crear_fila_campo(i) for i in range(1, 5)],
+            ]
+            
+            # Resetear lógica de carpetas
+            if hasattr(self, 'logic'):
+                self.logic.folder_name = ""
+                self.logic.folder_path = ""
+            
+            # Cerrar cualquier overlay de error visible
+            self.error_overlay.visible = False
+            
+            # Refrescar la UI del wizard
+            self._refresh_wizard_ui()
+            
+            print("✅ Wizard reiniciado completamente. Listo para crear un nuevo proyecto.")
+            
+        except Exception as ex:
+            print(f"Error al resetear el wizard: {ex}")
+            # En caso de error, al menos cerrar overlay de error
+            try:
+                self.error_overlay.visible = False
+                self.page.update()
+            except:
+                pass
 
-            # 1. Crear superusuario
-            subprocess.run([
-                venv_python, manage_py,
-                "createsuperuser",
-                "--noinput",
-                f"--username={username}",
-                f"--email={email}"
-            ], check=True, capture_output=True, text=True, cwd=str(self.ruta_proyecto))
-
-            # 2. Establecer contraseña
-            script = f"""
-from django.contrib.auth import get_user_model
-User = get_user_model()
-user = User.objects.get(username='{username}')
-user.set_password('{password}')
-user.save()
-print("Contraseña actualizada exitosamente")
-        """
-            subprocess.run([
-                venv_python, manage_py,
-                "shell", "-c", script
-            ], check=True, capture_output=True, text=True, cwd=str(self.ruta_proyecto))
-
+    def _crear_superusuario_alternativo(self, username: str, email: str, password: str):
+        try:
+            venv_python = str(self.state.get_venv_python_path())
+            manage_py = str(self.state.get_manage_py_path())
+            one_liner = f"from django.contrib.auth import get_user_model; User = get_user_model(); user = User.objects.create_superuser('{username}', '{email}', '{password}'); print('Superuser created')"
+            
+            result = subprocess.run([
+                venv_python, manage_py, "shell", "-c", one_liner
+            ], check=True, capture_output=True, text=True, cwd=str(self.state.ruta_proyecto))
+            
+            print("Superusuario creado exitosamente!")
             self.page.snack_bar = ft.SnackBar(
                 ft.Text(f"Superusuario {username} creado"),
-                bgcolor=ft.colors.GREEN
+                bgcolor=ft.Colors.GREEN
             )
+            
         except subprocess.CalledProcessError as e:
-            error_msg = e.stderr if e.stderr else "Error desconocido al crear usuario"
+            # Si el usuario ya existe, intentar solo cambiar contraseña
+            if "already exists" in str(e.stderr):
+                try:
+                    change_pass = f"from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='{username}'); u.set_password('{password}'); u.save(); print('Password updated')"
+                    subprocess.run([
+                        venv_python, manage_py, "shell", "-c", change_pass
+                    ], check=True, capture_output=True, text=True, cwd=str(self.state.ruta_proyecto))
+                    
+                    self.page.snack_bar = ft.SnackBar(
+                        ft.Text(f"Contraseña actualizada para {username}"),
+                        bgcolor=ft.Colors.ORANGE
+                    )
+                except Exception:
+                    self.page.snack_bar = ft.SnackBar(
+                        ft.Text("Error: Usuario ya existe y no se pudo actualizar"),
+                        bgcolor=ft.Colors.RED
+                    )
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Error: {e.stderr}"),
+                    bgcolor=ft.Colors.RED
+                )
+        except Exception as e:
             self.page.snack_bar = ft.SnackBar(
-                ft.Text(f"{error_msg}"),
-                bgcolor=ft.colors.RED
+                ft.Text(f"Error: {str(e)}"),
+                bgcolor=ft.Colors.RED
             )
         finally:
             self.page.snack_bar.open = True
             self.page.update()
+
+    def handle_keyboard_event(self, e: ft.KeyboardEvent):
+        """Maneja los atajos de teclado de la aplicación"""
+        try:
+            # Atajo: Escape - Cerrar overlay de error
+            if e.key == "Escape" and self.error_overlay.visible:
+                self.cerrar_error()
+                return
+            
+            # Atajo: Ctrl+N - Nuevo proyecto
+            if e.key == "N" and e.ctrl:
+                self.nuevo_proyecto(e)
+                return
+                
+            # Atajo: Enter - Activar botón ACEPTAR del paso actual
+            if e.key == "Enter":
+                current_step = self._get_current_step()
+                if current_step:
+                    self._execute_current_step_action(current_step)
+                return
+                
+        except Exception as ex:
+            print(f"Error en manejo de teclado: {ex}")
+
+    def _get_current_step(self):
+        """Determina cuál es el paso actual del wizard"""
+        steps_order = ["carpeta", "entorno", "bd_config", "apps", "modelos", "servidor"]
+        
+        for step in steps_order:
+            if not self.state.wizard_states[step]:
+                return step
+        return None  # Todos los pasos completados
+
+    def _execute_current_step_action(self, step):
+        """Ejecuta la acción del paso actual (equivale a presionar ACEPTAR)"""
+        try:
+            if step == "carpeta":
+                self.page.run_task(self.create_folder, None)
+            elif step == "entorno":
+                self.page.run_task(self.crear_entorno_handler, None)
+            elif step == "bd_config":
+                self.save_db_config(None)
+            elif step == "apps":
+                self.page.run_task(self.generar_apps, None)
+            elif step == "modelos":
+                # Para modelos, solo ejecutar si hay datos válidos
+                if self.txt_tabla.value.strip() and self.dd_apps.value:
+                    self.page.run_task(self.guardar_modelo, None)
+            elif step == "servidor":
+                # Para servidor, ejecutar crear superusuario si hay datos válidos
+                if (self.txt_admin_user.value.strip() and 
+                    self.txt_admin_email.value.strip() and 
+                    self.txt_admin_pass.value.strip()):
+                    self._trigger_async_creation()
+                else:
+                    # Si no hay datos de superusuario, intentar iniciar servidor
+                    self.page.run_task(self.iniciar_servidor, None)
+        except Exception as ex:
+            print(f"Error ejecutando acción del paso {step}: {ex}")
 
     def build(self):
         return self.contenedores
     
 def main(page: ft.Page):
 
-    page.window_min_height = 820
-    page.window_min_width = 530
+    page.window_min_height = 600
+    page.window_min_width = 400
     page.theme_mode = ft.ThemeMode.SYSTEM 
+    page.scroll = ft.ScrollMode.AUTO
 
     ui = UI(page) 
+    page.on_keyboard_event = ui.handle_keyboard_event
     page.add(ui.build())
 
 ft.app(target=main)
