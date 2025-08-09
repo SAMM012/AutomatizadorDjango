@@ -37,37 +37,76 @@ class DatabaseConfig:
         })
     
     def generate_django_settings(self) -> str:
-        return dedent('''\
-            import os
-            from pathlib import Path
+        # Generar configuración de base de datos según el tipo seleccionado
+        db_config = self._generate_db_config()
+        
+        return f'''import os
+from pathlib import Path
 
-            BASE_DIR = Path(__file__).resolve().parent.parent
-            SECRET_KEY = '{}'
+BASE_DIR = Path(__file__).resolve().parent.parent
+SECRET_KEY = '{''.join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=50))}'
 
-            DEBUG = True
-            ALLOWED_HOSTS = ['*']
-            LANGUAGE_CODE = 'es-mx'
-            TIME_ZONE = 'America/Mexico_City'
+DEBUG = True
+ALLOWED_HOSTS = ['*']
+LANGUAGE_CODE = 'es-mx'
+TIME_ZONE = 'America/Mexico_City'
 
-            DATABASES = {{
-                'default': {{
-                    'ENGINE': 'django.db.backends.sqlite3',
-                    'NAME': BASE_DIR / 'db.sqlite3',
-                }}
-            }}
+{db_config}
 
-            INSTALLED_APPS = [
-                'django.contrib.admin',
-                'django.contrib.auth',
-                'django.contrib.contenttypes',
-                'django.contrib.sessions',
-                'django.contrib.messages',
-                'django.contrib.staticfiles',
-            ]
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+]
 
-            STATIC_URL = 'static/'
-            STATIC_ROOT = BASE_DIR / 'static'
-            '''.format(''.join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=50))))
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+ROOT_URLCONF = 'Mi_proyecto.urls'
+
+TEMPLATES = [
+    {{
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [],
+        'APP_DIRS': True,
+        'OPTIONS': {{
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        }},
+    }},
+]
+
+WSGI_APPLICATION = 'Mi_proyecto.wsgi.application'
+
+AUTH_PASSWORD_VALIDATORS = [
+    {{'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',}},
+    {{'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',}},
+    {{'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',}},
+    {{'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',}},
+]
+
+USE_I18N = True
+USE_TZ = True
+
+STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'static'
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+'''
 
     def _generate_sqlite_config(self) -> str:
         return '''DATABASES = {
@@ -116,12 +155,14 @@ class DatabaseConfig:
         apps_dir = project_dir / "apps"
         apps_dir.mkdir(exist_ok=True)
 
-        settings_dir = project_dir / "Mi_proyecto" / "settings.py"
-        settings_dir.mkdir(parents=True, exist_ok=True)
+        # Corregir la ruta del settings.py (era incorrecta)
+        settings_file = project_dir / "Mi_proyecto" / "settings.py"
         
-        if not (settings_dir / "settings.py").exists():
-            with open(settings_dir / "settings.py", "w") as f:
-                f.write(self.generate_django_settings()) 
+        # SIEMPRE sobrescribir el settings.py con la configuración actualizada
+        with open(settings_file, "w") as f:
+            f.write(self.generate_django_settings())
+        
+        print(f"✅ Settings.py actualizado con configuración {self.db_type.upper()}") 
         
         for app_name, models in self.apps.items():
             app_dir = project_dir / "apps" / app_name
@@ -152,19 +193,23 @@ class DatabaseConfig:
     def update_installed_apps(self, settings_path: str, app_name: str):
         """Añade la app a INSTALLED_APPS en settings.py"""
         try:
-            with open(settings_path, 'r+') as f:
+            with open(settings_path, 'r+', encoding='utf-8') as f:
                 content = f.read()
                 
                 # Verificar si la app ya está registrada
                 if f"'apps.{app_name}'" in content:
                     return
                 
-                # Buscar el bloque INSTALLED_APPS
-                if "'django.contrib.staticfiles'" in content:
-                    nuevo_content = content.replace(
-                        "'django.contrib.staticfiles',",
-                        f"'django.contrib.staticfiles',\n    'apps.{app_name}',"
-                    )
+                # Buscar el bloque INSTALLED_APPS y preservar indentación
+                if "'django.contrib.staticfiles'," in content:
+                    lines = content.split('\n')
+                    for i, line in enumerate(lines):
+                        if "'django.contrib.staticfiles'," in line:
+                            # Obtener la indentación de la línea actual
+                            indentation = line[:len(line) - len(line.lstrip())]
+                            lines.insert(i + 1, f"{indentation}'apps.{app_name}',")
+                            break
+                    nuevo_content = '\n'.join(lines)
                     f.seek(0)
                     f.write(nuevo_content)
                     f.truncate()

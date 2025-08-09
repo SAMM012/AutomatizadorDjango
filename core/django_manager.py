@@ -124,14 +124,19 @@ class {app_name.capitalize()}Config(AppConfig):
                     break
         
         if settings_path.exists():
-            with open(settings_path, "r+") as f:
+            with open(settings_path, "r+", encoding='utf-8') as f:
                 content = f.read()                
                 if f"'apps.{app_name}'" not in content:
                     if "'django.contrib.staticfiles'," in content:
-                        new_content = content.replace(
-                            "'django.contrib.staticfiles',",
-                            f"'django.contrib.staticfiles',\n    'apps.{app_name}',"
-                        )
+                        # Preservar la indentación existente
+                        lines = content.split('\n')
+                        for i, line in enumerate(lines):
+                            if "'django.contrib.staticfiles'," in line:
+                                # Obtener la indentación de la línea actual
+                                indentation = line[:len(line) - len(line.lstrip())]
+                                lines.insert(i + 1, f"{indentation}'apps.{app_name}',")
+                                break
+                        new_content = '\n'.join(lines)
                         f.seek(0)
                         f.write(new_content)
                         f.truncate()
@@ -321,13 +326,18 @@ class {app_name.capitalize()}Config(AppConfig):
                         f.write("from django.shortcuts import render\n\n# Vistas aqui\n")
                 settings_path = project_dir / "Mi_proyecto" / "settings.py"
                 if settings_path.exists():
-                    with open(settings_path, "r+") as f:
+                    with open(settings_path, "r+", encoding='utf-8') as f:
                         content = f.read()
                         if f"'apps.{app_name}'" not in content:
-                            new_content = content.replace(
-                                "'django.contrib.staticfiles',",
-                                f"'django.contrib.staticfiles',\n    'apps.{app_name}',"
-                            )
+                            # Preservar la indentación existente
+                            lines = content.split('\n')
+                            for i, line in enumerate(lines):
+                                if "'django.contrib.staticfiles'," in line:
+                                    # Obtener la indentación de la línea actual
+                                    indentation = line[:len(line) - len(line.lstrip())]
+                                    lines.insert(i + 1, f"{indentation}'apps.{app_name}',")
+                                    break
+                            new_content = '\n'.join(lines)
                             f.seek(0)
                             f.write(new_content)
                             f.truncate()

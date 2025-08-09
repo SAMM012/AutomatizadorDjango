@@ -56,3 +56,60 @@ async def crear_entorno_virtual(nombre: str, ruta_base: str, nombre_proyecto: st
         return f"Error: {str(e)}"
     except Exception as e:
         return f"Error: {str(e)}"
+
+async def instalar_psycopg2(ruta_entorno: str) -> bool:
+    """Instala psycopg2-binary para soporte de PostgreSQL"""
+    try:
+        # Detectar sistema operativo para encontrar pip
+        if os.name == "nt":  # Windows
+            pip_path = str(Path(ruta_entorno) / "Scripts" / "pip")
+        else:  # Linux/macOS
+            pip_path = str(Path(ruta_entorno) / "bin" / "pip")
+            
+        print("📦 Instalando psycopg2-binary para PostgreSQL...")
+        
+        proc = await asyncio.create_subprocess_exec(
+            pip_path, "install", "psycopg2-binary",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        
+        if proc.returncode != 0:
+            print(f"❌ Error instalando psycopg2: {stderr.decode()}")
+            return False
+        
+        print("✅ psycopg2-binary instalado correctamente")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error instalando psycopg2: {str(e)}")
+        return False
+
+def instalar_psycopg2_sync(ruta_entorno: str) -> bool:
+    """Versión síncrona para instalar psycopg2-binary para soporte de PostgreSQL"""
+    try:
+        # Detectar sistema operativo para encontrar pip
+        if os.name == "nt":  # Windows
+            pip_path = str(Path(ruta_entorno) / "Scripts" / "pip")
+        else:  # Linux/macOS
+            pip_path = str(Path(ruta_entorno) / "bin" / "pip")
+            
+        print("📦 Instalando psycopg2-binary para PostgreSQL...")
+        
+        result = subprocess.run(
+            [pip_path, "install", "psycopg2-binary"],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            print(f"❌ Error instalando psycopg2: {result.stderr}")
+            return False
+        
+        print("✅ psycopg2-binary instalado correctamente")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error instalando psycopg2: {str(e)}")
+        return False

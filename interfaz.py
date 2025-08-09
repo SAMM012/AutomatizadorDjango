@@ -2,7 +2,7 @@ import asyncio
 import threading
 import flet as ft
 from core.crear_carpeta import FolderCreatorLogic
-from core.crear_entorno import crear_entorno_virtual
+from core.crear_entorno import crear_entorno_virtual, instalar_psycopg2_sync
 from core.django_manager import DjangoManager
 from core.bd_config import DatabaseConfig
 from core.project_state import ProjectState 
@@ -149,6 +149,76 @@ class UI:
         self.txt_admin_email = ft.TextField(label="Email", width=200)
         self.txt_admin_pass = ft.TextField(label="Contraseña", password=True, width=200)
 
+        # Campos para configuración PostgreSQL
+        self.txt_db_name = ft.TextField(
+            label="Nombre de la base de datos",
+            width=200,
+            height=35,
+            value="mi_db",
+            on_change=self.validar_campo_postgres
+        )
+        self.txt_db_user = ft.TextField(
+            label="Usuario",
+            width=200,
+            height=35,
+            value="postgres",
+            on_change=self.validar_campo_postgres
+        )
+        self.txt_db_password = ft.TextField(
+            label="Contraseña",
+            width=200,
+            height=35,
+            password=True,
+            on_change=self.validar_campo_postgres
+        )
+        self.txt_db_host = ft.TextField(
+            label="Host",
+            width=200,
+            height=35,
+            value="localhost",
+            on_change=self.validar_campo_postgres
+        )
+        self.txt_db_port = ft.TextField(
+            label="Puerto",
+            width=200,
+            height=35,
+            value="5432",
+            on_change=self.validar_campo_postgres
+        )
+
+        # Contenedor para campos PostgreSQL (inicialmente oculto)
+        self.postgres_fields_container = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("Configuración PostgreSQL:", weight=ft.FontWeight.BOLD, size=14),
+                    ft.Row([
+                        ft.Column([
+                            self.txt_db_name,
+                            self.txt_db_user,
+                            self.txt_db_password
+                        ], spacing=8),
+                        ft.Column([
+                            self.txt_db_host,
+                            self.txt_db_port
+                        ], spacing=8)
+                    ], spacing=20)
+                ],
+                spacing=10
+            ),
+            padding=ft.padding.only(top=15, bottom=10),
+            visible=False
+        )
+
+        # RadioGroup para selección de base de datos
+        self.radio_group_bd = ft.RadioGroup(
+            content=ft.Row([
+                ft.Radio(value="sqlite", label="SQLite"),
+                ft.Radio(value="postgres", label="PostgreSQL (Próximamente)", disabled=True)
+            ]),
+            value="sqlite",
+            on_change=self.update_db_choice
+        )
+
         self.btn_crear_su = ft.ElevatedButton(
             "Crear Superusuario",
             icon=ft.Icons.PERSON_ADD,
@@ -166,6 +236,18 @@ class UI:
             bgcolor="#4CAF50",
             height=40,
             on_click=lambda e: self.page.run_task(self.crear_entorno_handler, e),
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=2),
+                overlay_color=ft.Colors.with_opacity(0.1, "white"),
+                side=ft.BorderSide(1, ft.Colors.BLACK)
+            )
+        )
+
+        self.btn_aceptar_bd = ft.ElevatedButton(
+            content=ft.Text("ACEPTAR", color="white"),
+            bgcolor="#4CAF50",
+            height=40,
+            on_click=self.save_db_config,
             style=ft.ButtonStyle(
                 shape=ft.RoundedRectangleBorder(radius=2),
                 overlay_color=ft.Colors.with_opacity(0.1, "white"),
@@ -343,7 +425,6 @@ class UI:
                             ],
                             alignment=ft.MainAxisAlignment.CENTER,
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                           
                         )
                     ),
                     ft.Divider(height=1, color="black"),
@@ -355,38 +436,30 @@ class UI:
                                 expand=True,
                                 height=180,
                                 content=ft.Column(
-                                    
                                     controls=[
-                                        ft.Text("Seleccione que tipo de base de datos usar:", size=20, weight=ft.FontWeight.BOLD),
+                                        ft.Text("Seleccione que tipo de base de datos usar:", size=16, weight=ft.FontWeight.BOLD),
                                         
-                                        ft.RadioGroup(
-                                            content=ft.Row([
-                                                ft.Radio(value="sqlite", label="SQLite"),
-                                                ft.Radio(value="post", label="PostgreSQL")
-                                            ]),
-                                            value="sqlite",
-                                            on_change= self.update_db_choice
-                                        )
+                                        self.radio_group_bd,
+                                        
+                                        # Contenedor de campos PostgreSQL (se muestra/oculta dinámicamente)
+                                        self.postgres_fields_container
                                     ],
-                                    alignment=ft.MainAxisAlignment.CENTER
-                                )
+                                    spacing=10
+                                ),
+                                padding=20
                             ),
                             ft.Container(
                                 width=100,
-                                alignment=ft.alignment.center,
-                                content=ft.ElevatedButton(
-                                    content=ft.Text("ACEPTAR", color="white"),
-                                    bgcolor="#4CAF50",
-                                    height=40,
-                                    on_click=self.save_db_config,
-                                    style=ft.ButtonStyle(
-                                        shape=ft.RoundedRectangleBorder(radius=2),
-                                        overlay_color=ft.Colors.with_opacity(0.1, "white"),
-                                        side=ft.BorderSide(1, ft.Colors.BLACK)
-                                    )
+                                content=ft.Column(
+                                    controls=[
+                                        self.btn_aceptar_bd
+                                    ],
+                                    alignment=ft.MainAxisAlignment.CENTER,
+                                    horizontal_alignment=ft.CrossAxisAlignment.CENTER
                                 )
                             )
-                        ]
+                        ],
+                        spacing=10
                     )
                 ]
             )
@@ -852,26 +925,106 @@ class UI:
 
     def update_db_choice(self, e):
         self.state.database_choice = e.control.value
+        
+        # Mostrar/ocultar campos PostgreSQL según la selección
+        if e.control.value == "postgres":
+            self.postgres_fields_container.visible = True
+        else:
+            self.postgres_fields_container.visible = False
+        
+        # Actualizar la UI
+        self.page.update()
         print(f"Base de datos seleccionada: {self.state.database_choice}")
 
     def save_db_config(self, e):
         if not self.state.wizard_states["entorno"]:
-            print("Primero debes crear el entorno virtual")
+            self.mostrar_error_entorno("⚠️ Primero debes crear el entorno virtual")
             return
-        self.db_config.set_database_type(self.state.database_choice)
-        
-        if self.state.database_choice == "post":
-            self.db_config.set_postgres_config(
-                name="mydb",
-                user="postgres", 
-                password="secret",
-                host="localhost",
-                port="5432"
-            )
-        print(f"Configuración {self.state.database_choice.upper()} guardada")
-        
-        self.state.update_wizard_step("bd_config", True)
-        self._refresh_wizard_ui()
+            
+        # Cambiar botón a estado de carga
+        self.btn_aceptar_bd.disabled = True
+        self.btn_aceptar_bd.bgcolor = ft.Colors.BLUE_800
+        self.btn_aceptar_bd.content = ft.Text("PROCESANDO...", color="white", size=12)
+        self.page.update()
+            
+        try:
+            # Validar configuración PostgreSQL si fue seleccionada
+            if self.state.database_choice == "postgres":
+                # Validar que todos los campos requeridos estén llenos
+                if not self.txt_db_name.value.strip():
+                    self.mostrar_error_entorno("❌ Ingresa el nombre de la base de datos")
+                    return
+                if not self.txt_db_user.value.strip():
+                    self.mostrar_error_entorno("❌ Ingresa el usuario de la base de datos")
+                    return
+                if not self.txt_db_host.value.strip():
+                    self.mostrar_error_entorno("❌ Ingresa el host de la base de datos")
+                    return
+                if not self.txt_db_port.value.strip():
+                    self.mostrar_error_entorno("❌ Ingresa el puerto de la base de datos")
+                    return
+                    
+                # Validar puerto
+                try:
+                    puerto = int(self.txt_db_port.value.strip())
+                    if not (1 <= puerto <= 65535):
+                        self.mostrar_error_entorno("❌ El puerto debe estar entre 1 y 65535")
+                        return
+                except ValueError:
+                    self.mostrar_error_entorno("❌ El puerto debe ser un número válido")
+                    return
+                
+                # Configurar PostgreSQL con los datos del usuario
+                self.db_config.set_postgres_config(
+                    name=self.txt_db_name.value.strip(),
+                    user=self.txt_db_user.value.strip(),
+                    password=self.txt_db_password.value,  # Puede estar vacío
+                    host=self.txt_db_host.value.strip(),
+                    port=self.txt_db_port.value.strip()
+                )
+            
+            # Guardar tipo de base de datos
+            self.db_config.set_database_type(self.state.database_choice)
+            
+            # Instalar psycopg2 si se selecciona PostgreSQL
+            if self.state.database_choice == "postgres" and self.state.ruta_base:
+                venv_path = str(Path(self.state.ruta_base) / "venv")
+                print("🔧 Instalando driver de PostgreSQL...")
+                try:
+                    success = instalar_psycopg2_sync(venv_path)
+                    if not success:
+                        self.mostrar_error_entorno("❌ Error al instalar el driver de PostgreSQL. Verifica tu conexión a internet.")
+                        return
+                except Exception as e:
+                    print(f"Error instalando psycopg2: {e}")
+                    self.mostrar_error_entorno("❌ Error al instalar el driver de PostgreSQL.")
+                    return
+            
+            # Generar/actualizar settings.py con la nueva configuración
+            if self.state.ruta_proyecto:
+                self.db_config.generate_files(self.state.ruta_proyecto)
+            
+            print(f"Configuración {self.state.database_choice.upper()} guardada y aplicada")
+            
+            # Estado final: botón completado
+            self.btn_aceptar_bd.bgcolor = ft.Colors.GREY_600
+            self.btn_aceptar_bd.content = ft.Text("COMPLETADO", color="white", size=12)
+            
+            self.state.update_wizard_step("bd_config", True)
+            self._refresh_wizard_ui()
+            
+        except Exception as ex:
+            # En caso de error, restaurar estado original
+            self.btn_aceptar_bd.disabled = False
+            self.btn_aceptar_bd.bgcolor = "#4CAF50"
+            self.btn_aceptar_bd.content = ft.Text("ACEPTAR", color="white")
+            self.page.update()
+            
+            error_msg = str(ex)
+            self.mostrar_error_entorno(f"❌ Error al guardar configuración: {error_msg}")
+            
+        finally:
+            self.page.update()
 
     def _validar_campos_modelo(self) -> tuple:
         nombres_campos = []
@@ -1036,6 +1189,9 @@ class UI:
             elif any(keyword in mensaje_actual.lower() for keyword in ['proyecto', 'entorno', 'django', 'reservada', 'números', 'espacios']):
                 # Es un error de entorno - limpiar campos de entorno
                 self.limpiar_campos_entorno()
+            elif any(keyword in mensaje_actual.lower() for keyword in ['base de datos', 'puerto', 'host', 'usuario']):
+                # Es un error de base de datos - limpiar campos de PostgreSQL
+                self.limpiar_campos_postgres()
             else:
                 # Es un error de modelo - limpiar campos de modelo
                 self.limpiar_campos_modelo(e)
@@ -1056,6 +1212,21 @@ class UI:
             print("✅ Campo del proyecto Django limpiado.")
         except Exception as ex:
             print(f"Error al limpiar campos de entorno: {ex}")
+
+    def limpiar_campos_postgres(self):
+        """Limpia los campos de configuración PostgreSQL"""
+        try:
+            # Resetear campos de PostgreSQL a valores por defecto
+            self.txt_db_name.value = "mi_db"
+            self.txt_db_user.value = "postgres"
+            self.txt_db_password.value = ""
+            self.txt_db_host.value = "localhost"
+            self.txt_db_port.value = "5432"
+            # Actualizar la UI
+            self.page.update()
+            print("✅ Campos de PostgreSQL limpiados.")
+        except Exception as ex:
+            print(f"Error al limpiar campos de PostgreSQL: {ex}")
 
     def limpiar_campos_carpeta(self):
         """Limpia los campos del contenedor 1 (carpeta)"""
@@ -1134,6 +1305,25 @@ class UI:
         if nombre_proyecto.lower() in reserved_names:
             self.mostrar_error_entorno(f"❌ '{nombre_proyecto}' es una palabra reservada. Usa nombres como: mi_sitio, proyecto_web, app_principal")
             return
+
+    def validar_campo_postgres(self, e):
+        """Valida campos de configuración PostgreSQL en tiempo real"""
+        campo = e.control
+        valor = campo.value.strip()
+        
+        # Validar que no esté vacío (excepto contraseña)
+        if not valor and campo != self.txt_db_password:
+            return  # Permitir vacío temporalmente
+            
+        # Validar puerto si es el campo de puerto
+        if campo == self.txt_db_port:
+            if not valor.isdigit():
+                self.mostrar_error_entorno("❌ El puerto debe ser un número válido (ej: 5432)")
+                return
+            puerto = int(valor)
+            if not (1 <= puerto <= 65535):
+                self.mostrar_error_entorno("❌ El puerto debe estar entre 1 y 65535")
+                return
 
 
     def crear_dialogo_error(self, mensaje_error):
@@ -1712,6 +1902,10 @@ class UI:
             # Resetear el estado del proyecto
             self.state = ProjectState()
             
+            # Resetear configuración de base de datos
+            self.db_config = DatabaseConfig()
+            self.radio_group_bd.value = "sqlite"  # Resetear a SQLite por defecto
+            
             # Limpiar todos los campos
             self.txt_folder_name.value = ""
             self.txt_nombre_proyecto.value = ""
@@ -1720,6 +1914,14 @@ class UI:
             self.txt_admin_user.value = ""
             self.txt_admin_email.value = ""
             self.txt_admin_pass.value = ""
+            
+            # Resetear campos PostgreSQL
+            self.txt_db_name.value = "mi_db"
+            self.txt_db_user.value = "postgres" 
+            self.txt_db_password.value = ""
+            self.txt_db_host.value = "localhost"
+            self.txt_db_port.value = "5432"
+            self.postgres_fields_container.visible = False  # Ocultar campos PostgreSQL
             
             # Resetear labels y estados
             self.lbl_path.value = "Ninguna"
@@ -1730,6 +1932,10 @@ class UI:
             self.btn_aceptar_entorno.disabled = False
             self.btn_aceptar_entorno.bgcolor = "#4CAF50"
             self.btn_aceptar_entorno.content = ft.Text("ACEPTAR", color="white")
+            
+            self.btn_aceptar_bd.disabled = False
+            self.btn_aceptar_bd.bgcolor = "#4CAF50"
+            self.btn_aceptar_bd.content = ft.Text("ACEPTAR", color="white")
             
             self.btn_iniciar_servidor.disabled = False
             self.btn_detener_servidor.disabled = True
