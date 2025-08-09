@@ -15,6 +15,12 @@ class DjangoManager:
                 [python_executable, "-m", "django", "startproject", project_name, str(project_dir)],
                 check=True
             )
+            
+            # Crear requirements.txt básico
+            requirements_path = Path(project_dir) / "requirements.txt"
+            with open(requirements_path, "w") as f:
+                f.write("Django>=5.0.0\n")
+            
             return True
         except subprocess.CalledProcessError as e:
             print(f"Error al crear proyecto: {e}")
@@ -114,7 +120,7 @@ class {app_name.capitalize()}Config(AppConfig):
         
         if not settings_path.exists():
             possible_paths = [
-                project_dir / "Mi_proyecto" / "settings.py",
+                project_dir / project_name / "settings.py",
                 project_dir / project_name.lower() / "settings.py"
             ]
             
@@ -324,7 +330,7 @@ class {app_name.capitalize()}Config(AppConfig):
                 if not views_py.exists():
                     with open(views_py, "w", encoding='utf-8') as f:
                         f.write("from django.shortcuts import render\n\n# Vistas aqui\n")
-                settings_path = project_dir / "Mi_proyecto" / "settings.py"
+                settings_path = project_dir / project_name / "settings.py"
                 if settings_path.exists():
                     with open(settings_path, "r+", encoding='utf-8') as f:
                         content = f.read()
@@ -753,7 +759,7 @@ urlpatterns = [
 
     @staticmethod
     def _conectar_urls_proyecto(project_dir: Path, app_name: str):
-        main_urls_path = project_dir / "Mi_proyecto" / "urls.py"
+        main_urls_path = project_dir / project_name / "urls.py"
         
         if not main_urls_path.exists():
             possible_paths = [
@@ -904,7 +910,7 @@ urlpatterns = [
         
         with open(index_template, "w", encoding='utf-8') as f:
             f.write(index_content) 
-        main_views_path = project_dir / "Mi_proyecto" / "views.py"
+        main_views_path = project_dir / project_name / "views.py"
         if not main_views_path.exists():
             views_content = """from django.shortcuts import render
 import os
@@ -946,7 +952,7 @@ def index(request):
             
             with open(main_views_path, "w", encoding='utf-8') as f:
                 f.write(views_content)
-        settings_path = project_dir / "Mi_proyecto" / "settings.py"
+        settings_path = project_dir / project_name / "settings.py"
         if settings_path.exists():
             with open(settings_path, "r") as f:
                 content = f.read()

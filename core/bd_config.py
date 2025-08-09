@@ -7,11 +7,12 @@ from pathlib import Path
 import os
 
 class DatabaseConfig:
-    def __init__(self):
+    def __init__(self, project_name="Mi_proyecto"):
         self.db_type = "sqlite"  # Valor por defecto
         self.postgres_config = {}
         self.models = []
         self.apps={}
+        self.project_name = project_name
 
     def set_database_type(self, db_type: str):
         """Define el tipo de base de datos (sqlite/postgres)"""
@@ -47,9 +48,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = '{''.join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=50))}'
 
 DEBUG = True
-ALLOWED_HOSTS = ['*']
-LANGUAGE_CODE = 'es-mx'
-TIME_ZONE = 'America/Mexico_City'
+ALLOWED_HOSTS = []
+LANGUAGE_CODE = 'en-us'
+TIME_ZONE = 'UTC'
 
 {db_config}
 
@@ -72,7 +73,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'Mi_proyecto.urls'
+ROOT_URLCONF = '{self.project_name}.urls'
 
 TEMPLATES = [
     {{
@@ -90,7 +91,7 @@ TEMPLATES = [
     }},
 ]
 
-WSGI_APPLICATION = 'Mi_proyecto.wsgi.application'
+WSGI_APPLICATION = '{self.project_name}.wsgi.application'
 
 AUTH_PASSWORD_VALIDATORS = [
     {{'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',}},
@@ -156,7 +157,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
         apps_dir.mkdir(exist_ok=True)
 
         # Corregir la ruta del settings.py (era incorrecta)
-        settings_file = project_dir / "Mi_proyecto" / "settings.py"
+        settings_file = project_dir / self.project_name / "settings.py"
         
         # SIEMPRE sobrescribir el settings.py con la configuración actualizada
         with open(settings_file, "w") as f:

@@ -31,7 +31,7 @@ class UI:
         self.page = page
         self.state = ProjectState()
         self.logic = FolderCreatorLogic(page)
-        self.db_config = DatabaseConfig()
+        self.db_config = DatabaseConfig("Mi_proyecto")
         self.django_manager = DjangoManager()
         
         # Contenedor de error centrado
@@ -983,6 +983,9 @@ class UI:
                     port=self.txt_db_port.value.strip()
                 )
             
+            # Actualizar nombre del proyecto en db_config
+            self.db_config.project_name = self.state.nombre_proyecto
+            
             # Guardar tipo de base de datos
             self.db_config.set_database_type(self.state.database_choice)
             
@@ -1903,7 +1906,7 @@ class UI:
             self.state = ProjectState()
             
             # Resetear configuración de base de datos
-            self.db_config = DatabaseConfig()
+            self.db_config = DatabaseConfig("Mi_proyecto")
             self.radio_group_bd.value = "sqlite"  # Resetear a SQLite por defecto
             
             # Limpiar todos los campos
